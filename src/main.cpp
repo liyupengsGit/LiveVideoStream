@@ -7,32 +7,33 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
-#include <libswscale/swscale.h>
-#include <libavutil/imgutils.h>
-#include <libavutil/error.h>
-#include <libswresample/swresample.h>
 #include <libavdevice/avdevice.h>
+#include <libavutil/imgutils.h>
+#include <libswscale/swscale.h>
+
 }
 #endif
 
 #define VIDEO_DEVICE "/dev/video0"
+#define WIDTH 640
+#define HEIGHT 480
 
 // forward declaration
 void configureVideoCapture(cv::VideoCapture &);
 void convertToBgrAndShow(const cv::Mat &);
 
-int decode(AVCodecContext *avctx, AVFrame *frame, bool &gotFrame, AVPacket *pkt)
+int decode(AVCodecContext *codecContext, AVFrame *frame, bool &gotFrame, AVPacket *pkt)
 {
     int retCode;
     gotFrame = false;
 
     if (pkt)
     {
-        retCode = avcodec_send_packet(avctx, pkt);
+        retCode = avcodec_send_packet(codecContext, pkt);
         if (retCode < 0) return retCode == AVERROR_EOF ? 0 : retCode;
     }
 
-    retCode = avcodec_receive_frame(avctx, frame);
+    retCode = avcodec_receive_frame(codecContext, frame);
     if (retCode < 0 && retCode != AVERROR(EAGAIN) && retCode != AVERROR_EOF)
     {
         return retCode;
@@ -46,47 +47,115 @@ int decode(AVCodecContext *avctx, AVFrame *frame, bool &gotFrame, AVPacket *pkt)
 int main(int argc, char** argv)
 {
     initLogger(LOG_LEVEL_DEBUG);
-    av_log_set_level(AV_LOG_TRACE);
+    av_log_set_level(AV_LOG_DEBUG);
 
-    avdevice_register_all();
-    avcodec_register_all();
     av_register_all();
+    avcodec_register_all();
+    avdevice_register_all();
 
-    int retCode;
-
-    // find input format
-    AVInputFormat *inputFormat = av_find_input_format("v4l2");
-    if (!inputFormat)
-    {
-        LOG(ERROR) << "Couldn't find v4l2 input format.";
-        return -1;
-    }
-
-    // set options
+    AVCodecContext *pCodecCtx = nullptr;
+    auto *pFormatCtx   = avformat_alloc_context();
+    AVCodec *pCodec    = nullptr;
+    auto *inputFormat  = av_find_input_format("v4l2");
+    AVFrame *pFrame    = nullptr;
+    AVFrame *pFrameRGB = nullptr;
     AVDictionary *opts = nullptr;
-    av_dict_set(&opts,"framerate", "30", 0);
+    int statusCode;
+
+    av_dict_set(&opts, "framerate", "15", 0);
     av_dict_set(&opts, "video_size", "640x480", 0);
     av_dict_set(&opts, "pixel_format", "yuyv422", 0);
 
-    // allocate format context with the specified input format and options
-    AVFormatContext *formatContext = nullptr;
-    if ((retCode = avformat_open_input(&formatContext, VIDEO_DEVICE, inputFormat, &opts)) != 0)
+    statusCode = avformat_open_input(&pFormatCtx, VIDEO_DEVICE, inputFormat, &opts);
+    assert(statusCode >= 0);
+
+    statusCode = avformat_find_stream_info(pFormatCtx, nullptr);
+    assert(statusCode >= 0);
+
+    av_dump_format(pFormatCtx, 0, VIDEO_DEVICE, 0);
+
+    int videoStreamIdx = -1;
+    for (int i = 0; i < pFormatCtx->nb_streams; ++i)
     {
-        LOG(ERROR) << "Couldn't open v4l2 device.";
-        return retCode;
+        if (pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+        {
+            videoStreamIdx = i;
+            break;
+        }
+    }
+    assert(videoStreamIdx >= 0);
+
+    auto *codecParams = pFormatCtx->streams[videoStreamIdx]->codecpar;
+
+    pCodec    = avcodec_find_decoder(codecParams->codec_id);
+    pCodecCtx = avcodec_alloc_context3(pCodec);
+    assert(pCodec && pCodecCtx);
+
+    statusCode = avcodec_parameters_to_context(pCodecCtx, codecParams);
+    assert(statusCode >= 0);
+
+//    av_dict_set(&opts, "b", "2.5M", 0);
+    statusCode = avcodec_open2(pCodecCtx, pCodec, &opts);
+    assert(statusCode == 0);
+
+    pFrame    = av_frame_alloc();
+    pFrameRGB = av_frame_alloc();
+
+    uint8_t *buffer = nullptr;
+    int numBytes = -1;
+
+    AVPixelFormat pixelFormat = AV_PIX_FMT_BGR24;
+    numBytes = av_image_get_buffer_size(pixelFormat, WIDTH, HEIGHT, 1);
+    assert(numBytes > 0);
+
+    LOG(INFO) << "Buffer size: " << numBytes;
+    buffer = static_cast<uint8_t *>(av_mallocz(numBytes * sizeof(uint8_t)));
+    assert(buffer);
+
+    av_image_fill_arrays(pFrameRGB->data, pFrameRGB->linesize, buffer, pixelFormat, WIDTH, HEIGHT, 1);
+
+    int res;
+    bool frameFinished;
+    AVPacket packet{};
+
+    int counter = 300;
+    cv::namedWindow("Display", CV_WINDOW_AUTOSIZE);
+
+    while ((res = av_read_frame(pFormatCtx, &packet)) >= 0 && counter-- > 0)
+    {
+
+      if (packet.stream_index == videoStreamIdx)
+      {
+          decode(pCodecCtx, pFrame, frameFinished, &packet);
+
+          if (frameFinished)
+          {
+              struct SwsContext *convertCtx = sws_getCachedContext(nullptr, pCodecCtx->width, pCodecCtx->height,
+                                                                   pCodecCtx->pix_fmt,
+                                                                   pCodecCtx->width, pCodecCtx->height,
+                                                                   pixelFormat, SWS_BICUBIC,
+                                                                   nullptr, nullptr, nullptr);
+
+              sws_scale(convertCtx, (const uint8_t* const*) pFrame->data, pFrame->linesize, 0, pCodecCtx->height,
+                        pFrameRGB->data,pFrameRGB->linesize);
+
+              cv::Mat img(pFrame->height, pFrame->width, CV_8UC3, pFrameRGB->data[0]);
+              cv::imshow("display", img);
+              cvWaitKey(1);
+
+              av_packet_unref(&packet);
+              sws_freeContext(convertCtx);
+          }
+
+      }
     }
 
-    // find H.264 codec
-    AVCodec *h264Codec = avcodec_find_encoder(AV_CODEC_ID_H264);
-    if (!h264Codec) {
-        LOG(ERROR) << "Couldn't find H.264 codec.";
-        return -1;
-    }
-
-    // create new stream
-    AVStream *stream = avformat_new_stream(formatContext, h264Codec);
-    stream->codecpar->format = AV_PIX_FMT_YUYV422;
-    stream->time_base = AVRational{1, 30}; // ~ 1/FPS
+    av_packet_unref(&packet);
+    av_free(pFrame);
+    av_free(pFrameRGB);
+    avcodec_free_context(&pCodecCtx);
+    avformat_close_input(&pFormatCtx);
+    avformat_free_context(pFormatCtx);
 
     /*
     // OpenCV video capturing API
@@ -134,8 +203,8 @@ void configureVideoCapture(cv::VideoCapture &videoCapture)
     videoCapture.set(cv::CAP_PROP_CONVERT_RGB, false);
 
     // Frame height and width in pixels
-    videoCapture.set(cv::CAP_PROP_FRAME_HEIGHT, 920);
-    videoCapture.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
+    videoCapture.set(cv::CAP_PROP_FRAME_HEIGHT, HEIGHT);
+    videoCapture.set(cv::CAP_PROP_FRAME_WIDTH, WIDTH);
 
     // Frames per second
     videoCapture.set(cv::CAP_PROP_FPS, 10);

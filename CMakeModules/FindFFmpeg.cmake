@@ -28,38 +28,43 @@ else (FFMPEG_LIBRARIES AND FFMPEG_INCLUDE_DIR)
         pkg_check_modules(_FFMPEG_AVFORMAT libavformat)
         pkg_check_modules(_FFMPEG_AVUTIL libavutil)
         pkg_check_modules(_FFMPEG_SWSCALE libswscale)
+        pkg_check_modules(_FFMPEG_AVDEVICE libavdevice)
     endif (PKG_CONFIG_FOUND)
 
     find_path(FFMPEG_AVCODEC_INCLUDE_DIR
             NAMES libavcodec/avcodec.h
-            PATHS ${_FFMPEG_AVCODEC_INCLUDE_DIRS} /usr/include /usr/local/include /opt/local/include /sw/include
+            PATHS ${_FFMPEG_AVCODEC_INCLUDE_DIRS} /usr/include /usr/local/include /opt/local/include
             PATH_SUFFIXES ffmpeg libav)
 
     find_library(FFMPEG_LIBAVCODEC
             NAMES avcodec
-            PATHS ${_FFMPEG_AVCODEC_LIBRARY_DIRS} /usr/lib /usr/local/lib /opt/local/lib /sw/lib)
+            PATHS ${_FFMPEG_AVCODEC_LIBRARY_DIRS} /usr/lib /usr/local/lib /opt/local/lib)
 
     find_library(FFMPEG_LIBAVFORMAT
             NAMES avformat
-            PATHS ${_FFMPEG_AVFORMAT_LIBRARY_DIRS} /usr/lib /usr/local/lib /opt/local/lib /sw/lib)
+            PATHS ${_FFMPEG_AVFORMAT_LIBRARY_DIRS} /usr/lib /usr/local/lib /opt/local/lib)
+
+    find_library(FFMPEG_LIBAVDEVICE
+            NAMES avdevice
+            PATHS ${_FFMPEG_AVDEVICE_LIBRARY_DIRS} /usr/lib /usr/local/lib /opt/local/lib)
 
     find_library(FFMPEG_LIBAVUTIL
             NAMES avutil
-            PATHS ${_FFMPEG_AVUTIL_LIBRARY_DIRS} /usr/lib /usr/local/lib /opt/local/lib /sw/lib
-            )
+            PATHS ${_FFMPEG_AVUTIL_LIBRARY_DIRS} /usr/lib /usr/local/lib /opt/local/lib)
 
     find_library(FFMPEG_LIBSWSCALE
             NAMES swscale
-            PATHS ${_FFMPEG_SWSCALE_LIBRARY_DIRS} /usr/lib /usr/local/lib /opt/local/lib /sw/lib)
+            PATHS ${_FFMPEG_SWSCALE_LIBRARY_DIRS} /usr/lib /usr/local/lib /opt/local/lib)
 
-    if (FFMPEG_LIBAVCODEC AND FFMPEG_LIBAVFORMAT AND FFMPEG_LIBSWSCALE)
+
+    if (FFMPEG_LIBAVCODEC AND FFMPEG_LIBAVFORMAT AND FFMPEG_LIBSWSCALE AND FFMPEG_LIBAVDEVICE)
         set(FFMPEG_FOUND TRUE)
     endif()
 
     if (FFMPEG_FOUND)
         set(FFMPEG_INCLUDE_DIR ${FFMPEG_AVCODEC_INCLUDE_DIR})
         set(FFMPEG_LIBRARIES ${FFMPEG_LIBAVCODEC} ${FFMPEG_LIBAVFORMAT}
-                ${FFMPEG_LIBAVUTIL} ${FFMPEG_LIBSWSCALE})
+                ${FFMPEG_LIBAVUTIL} ${FFMPEG_LIBSWSCALE} ${FFMPEG_LIBAVDEVICE})
     endif (FFMPEG_FOUND)
 
     if (FFMPEG_FOUND)

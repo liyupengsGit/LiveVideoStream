@@ -14,7 +14,8 @@ find_package(Threads REQUIRED)
 
 # executables
 include_directories("inc")
-add_executable(${PROJECT_NAME} ${SOURCE_FILES} src/logger.cpp src/main.cpp src/FFmpegDecoder.cpp)
+add_executable(${PROJECT_NAME} ${SOURCE_FILES}
+        src/logger.cpp src/main.cpp src/Decoder.cpp src/FFmpegDecoder.cpp src/Utils.cpp)
 
 # pthread
 target_link_libraries (${PROJECT_NAME} ${CMAKE_THREAD_LIBS_INIT})

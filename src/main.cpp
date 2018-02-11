@@ -1,4 +1,4 @@
-#include <opencv2/highgui.hpp>
+//#include <opencv2/highgui.hpp>
 
 #include "logger.h"
 #include "FFmpegDecoder.h"
@@ -6,9 +6,9 @@
 #define VIDEO_SOURCE "/dev/video0"
 
 void callback(uint8_t *data) {
-    cv::Mat img(480, 640, CV_8UC3, data);
-    cv::imshow("Display", img);
-    cvWaitKey(1);
+//    cv::Mat img(480, 640, CV_8UC3, data);
+//    cv::imshow("Display", img);
+//    cvWaitKey(1);
 }
 
 int main(int argc, char **argv) {

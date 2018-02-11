@@ -55,7 +55,7 @@ namespace LIRS {
         void registerAll();
 
         /**
-         * Sends packet and retrieves frame with raw image data.
+         * Retrieves frame with a raw image data.
          *
          * @param codecContext codec context.
          * @param frame raw image frame which is to be populated with data.

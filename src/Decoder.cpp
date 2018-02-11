@@ -1,4 +1,4 @@
-#include "Decoder.h"
+#include "Decoder.hpp"
 
 namespace LIRS {
 

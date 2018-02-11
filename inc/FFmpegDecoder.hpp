@@ -1,7 +1,7 @@
 #ifndef LIVE_VIDEO_STREAM_FFMPEG_DECODER_H
 #define LIVE_VIDEO_STREAM_FFMPEG_DECODER_H
 
-#include "Decoder.h" // abstract base class for decoders
+#include "Decoder.hpp" // abstract base class for decoders
 #include <vector>
 
 #ifdef __cplusplus

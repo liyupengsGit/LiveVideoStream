@@ -1,5 +1,5 @@
-#include "FFmpegDecoder.h"
-#include "Utils.h"
+#include "FFmpegDecoder.hpp"
+#include "Utils.hpp"
 #include "logger.h"
 
 /**

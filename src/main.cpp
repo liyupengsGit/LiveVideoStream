@@ -1,7 +1,7 @@
 #include <opencv2/highgui.hpp>
 
 #include "logger.h"
-#include "FFmpegDecoder.h"
+#include "FFmpegDecoder.hpp"
 
 #define VIDEO_SOURCE "/dev/video0"
 

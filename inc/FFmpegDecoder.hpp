@@ -1,5 +1,5 @@
-#ifndef LIVE_VIDEO_STREAM_FFMPEG_DECODER_H
-#define LIVE_VIDEO_STREAM_FFMPEG_DECODER_H
+#ifndef LIVE_VIDEO_STREAM_FFMPEG_DECODER_HPP
+#define LIVE_VIDEO_STREAM_FFMPEG_DECODER_HPP
 
 #include "Decoder.hpp" // abstract base class for decoders
 #include <vector>
@@ -103,4 +103,4 @@ namespace LIRS {
     };
 }
 
-#endif //LIVE_VIDEO_STREAM_FFMPEG_DECODER_H
+#endif //LIVE_VIDEO_STREAM_FFMPEG_DECODER_HPP

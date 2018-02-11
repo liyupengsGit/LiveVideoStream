@@ -1,5 +1,5 @@
-#ifndef LIVEVIDEOSTREAM_UTILS_H
-#define LIVEVIDEOSTREAM_UTILS_H
+#ifndef LIVE_VIDEO_STREAM_UTILS_HPP
+#define LIVE_VIDEO_STREAM_UTILS_HPP
 
 #include <string>
 #include <initializer_list>
@@ -24,4 +24,4 @@ namespace LIRS {
     }
 }
 
-#endif //LIVEVIDEOSTREAM_UTILS_H
+#endif //LIVE_VIDEO_STREAM_UTILS_HPP

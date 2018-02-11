@@ -1,5 +1,5 @@
-#ifndef LIVE_VIDEO_STREAM_DECODER_H
-#define LIVE_VIDEO_STREAM_DECODER_H
+#ifndef LIVE_VIDEO_STREAM_DECODER_HPP
+#define LIVE_VIDEO_STREAM_DECODER_HPP
 
 #include <string>
 #include <functional>
@@ -101,4 +101,4 @@ namespace LIRS {
     };
 }
 
-#endif //LIVE_VIDEO_STREAM_DECODER_H
+#endif //LIVE_VIDEO_STREAM_DECODER_HPP

@@ -2,6 +2,7 @@
 
 #include "logger.h"
 #include "FFmpegDecoder.hpp"
+#include "Encoder.hpp"
 
 #define VIDEO_SOURCE "/dev/video0"
 
@@ -17,18 +18,20 @@ void callback(uint8_t *data) {
 int main(int argc, char **argv) {
 
     initLogger(LOG_LEVEL_DEBUG);
+    av_log_set_level(AV_LOG_TRACE);
 
     LIRS::DecoderParams params{};
     params.frameRate = 15;
     params.frameWidth = WIDTH;
     params.frameHeight = HEIGHT;
 
-    LIRS::Decoder *decoder = new LIRS::FFmpegDecoder(VIDEO_SOURCE, params);
-
-    decoder->setOnFrameCallback(callback);
-    decoder->decodeLoop();
-
-    delete decoder;
+//    LIRS::Decoder *decoder = new LIRS::FFmpegDecoder(VIDEO_SOURCE, params);
+//    decoder->setOnFrameCallback(callback);
+//    decoder->decodeLoop();
+//    delete decoder;
+//
+    LIRS::Encoder* encoder = new LIRS::Encoder();
+    delete encoder;
 
     return 0;
 }

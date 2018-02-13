@@ -117,7 +117,7 @@ namespace LIRS {
                 if (gotFrame) {
 
                     // convert image to the specified format
-                    sws_scale(pImageConvertCtx, static_cast<const uint8_t *const *>(pRawFrame->data),
+                    sws_scale(pImageConvertCtx, reinterpret_cast<const uint8_t *const *>(pRawFrame->data),
                               pRawFrame->linesize, 0, (int) _frameHeight,
                               pFrame->data, pFrame->linesize);
 
@@ -170,10 +170,7 @@ namespace LIRS {
         int statusCode = avcodec_parameters_to_context(pCodecCtx, pCodecParameters);
         assert(statusCode >= 0);
 
-        AVDictionary* opts = nullptr;
-        av_dict_set(&opts, "b", "2.5M", 0); // todo what is this?
-
-        statusCode = avcodec_open2(pCodecCtx, pCodec, &opts);
+        statusCode = avcodec_open2(pCodecCtx, pCodec, nullptr);
 
         return statusCode;
     }

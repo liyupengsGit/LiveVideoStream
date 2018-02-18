@@ -1,3 +1,4 @@
+#include <thread>
 #include "Decoder.hpp"
 
 namespace LIRS {
@@ -25,5 +26,4 @@ namespace LIRS {
     void Decoder::setOnFrameCallback(const std::function<void(uint8_t *)> &onFrameCallback) {
         _onFrameCallback = onFrameCallback;
     }
-
 }

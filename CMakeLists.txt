@@ -4,7 +4,7 @@ project(LiveVideoStream)
 set(CMAKE_CXX_STANDARD 11)
 
 set(CMAKE_BUILD_TYPE DEBUG)
-set(CMAKE_CXX_FLAGS "-Wall")
+set(CMAKE_CXX_FLAGS "-Wall -pthread")
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules)
 
 find_package(OpenCV 3 REQUIRED)

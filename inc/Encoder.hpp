@@ -44,10 +44,6 @@ namespace LIRS {
             avcodec_register_all();
             av_register_all();
 
-            // find encoder (H.264)
-            pVideoCodec = avcodec_find_encoder(AV_CODEC_ID_H264);
-            assert(pVideoCodec);
-
             statusCode = avformat_alloc_output_context2(&pFormatCtx, nullptr, "h264", fileName.data());
             assert(statusCode >= 0);
 
@@ -55,47 +51,53 @@ namespace LIRS {
             pOutputFmt->video_codec = AV_CODEC_ID_H264;
             pOutputFmt->audio_codec = AV_CODEC_ID_NONE;
             pOutputFmt->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-            assert(pOutputFmt);
 
-            // create new stream
-            auto newStream = avformat_new_stream(pFormatCtx, pVideoCodec);
-            assert(newStream);
-
-            // copy codec parameters to the codec context
-            newStream->codecpar->codec_id   = AV_CODEC_ID_H264;
-            newStream->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-            newStream->codecpar->format     = AV_PIX_FMT_YUV422P;
-            newStream->codecpar->width      = frameWidth;
-            newStream->codecpar->height     = frameHeight;
-//            newStream->codecpar->bit_rate   = bitsPerSecond; // todo set this up manually or not?
-            pVideoStream = newStream;
+            // find encoder (H.264)
+            pVideoCodec = avcodec_find_encoder(pOutputFmt->video_codec);
+            assert(pVideoCodec);
 
             pCodecCtx = avcodec_alloc_context3(pVideoCodec);
-            avcodec_parameters_to_context(pCodecCtx, newStream->codecpar);
-
-            // settings for intra-only
+            pCodecCtx->width = frameWidth;
+            pCodecCtx->height = frameHeight;
             pCodecCtx->gop_size = 0;
             pCodecCtx->has_b_frames = 0;
+            pCodecCtx->pix_fmt = AV_PIX_FMT_YUV422P;
             pCodecCtx->time_base = (AVRational) {1, framesPerSecond};
-            av_opt_set(pCodecCtx->priv_data, "preset", "slow", 0);
-            av_opt_set(pCodecCtx->priv_data, "tune", "zerolatency", 0);
-//            av_opt_set(pCodecCtx->priv_data, "crf", "0", 0); // lossless
+            pCodecCtx->framerate = (AVRational) {framesPerSecond, 1};
+            if (pOutputFmt->flags & AV_CODEC_FLAG_GLOBAL_HEADER) {
+                pCodecCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+            }
 
+            AVStream* outputStream = avformat_new_stream(pFormatCtx, pVideoCodec);
+            assert(outputStream);
 
-            // create own AVIOContext in order to not to use file.
-//            avio_alloc_context()
-
-            av_dump_format(pFormatCtx, 0, fileName.data(), 1);
-
-            statusCode = avcodec_open2(pCodecCtx, pVideoCodec, nullptr);
+            statusCode = avcodec_parameters_from_context(outputStream->codecpar, pCodecCtx);
             assert(statusCode >= 0);
 
-//            statusCode = avio_open(&pFormatCtx->pb, fileName.data(), AVIO_FLAG_WRITE);
-//            assert(statusCode >= 0);
-//
-//            statusCode = avformat_write_header(pFormatCtx, nullptr);
-//            assert(statusCode >= 0);
+            outputStream->avg_frame_rate = pCodecCtx->framerate;
+            outputStream->r_frame_rate = pCodecCtx->framerate;
+            outputStream->time_base = pCodecCtx->time_base;
 
+            AVDictionary* opts = nullptr;
+            av_dict_set(&opts, "profile:v", "high422", 0);
+            av_dict_set(&opts, "level", "41", 0);
+            av_dict_set(&opts, "preset", "fast", 0);
+            av_dict_set(&opts, "tune", "zerolatency", 0);
+//            av_dict_set(&opts, "crf", "0", 0); // lossless
+            av_dict_set(&opts, "bufsize", "2500k", 0); // and other options
+
+            statusCode = avcodec_open2(pCodecCtx, pVideoCodec, &opts);
+            assert(statusCode >= 0);
+
+            if (!(pFormatCtx->flags & AVFMT_NOFILE)) {
+                statusCode = avio_open(&pFormatCtx->pb, fileName.data(), AVIO_FLAG_WRITE);
+                assert(statusCode >= 0);
+            }
+
+            statusCode = avformat_write_header(pFormatCtx, nullptr);
+            assert(statusCode >= 0);
+
+            av_dump_format(pFormatCtx, 0, fileName.data(), 1);
 
         };
 
@@ -196,7 +198,6 @@ namespace LIRS {
         SwsContext *swsCtx = nullptr;
         int bufferSize = 32;
         std::function<void()> onFrameCallback;
-
     };
 }
 

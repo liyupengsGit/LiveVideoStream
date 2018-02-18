@@ -1,9 +1,11 @@
 #include "FFmpegDecoder.hpp"
 #include "Utils.hpp"
 #include "logger.h"
+#include <thread>
 
 /**
  * @todo remove asserts, don't use hardcoded opts, throw exceptions on errors
+ * check timestamp is valid and present.
  */
 
 namespace LIRS {
@@ -59,7 +61,7 @@ namespace LIRS {
 
         sws_freeContext(pImageConvertCtx);
         av_frame_unref(pFrame);
-        av_free(pFrame);
+        av_frame_free(&pFrame);
         avcodec_free_context(&pCodecCtx);
         avformat_close_input(&pFormatCtx);
         avformat_free_context(pFormatCtx);

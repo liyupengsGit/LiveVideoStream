@@ -1,5 +1,3 @@
-#include <opencv2/highgui.hpp>
-
 #include "logger.h"
 #include "FFmpegDecoder.hpp"
 #include "Encoder.hpp"
@@ -9,12 +7,6 @@
 constexpr int WIDTH = 640;
 constexpr int HEIGHT = 480;
 constexpr int FRAMERATE = 15;
-
-void callback(uint8_t *data) {
-    cv::Mat img(HEIGHT, WIDTH, CV_8UC3, data);
-    cv::imshow("Display", img);
-    cvWaitKey(1);
-}
 
 int dec(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
 
@@ -42,12 +34,6 @@ int dec(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
         LOG(ERROR) << "Error during decoding";
         return statusCode;
     }
-
-    /*
-    LOG(INFO) << "Frame " << codecContext->frame_number << "(type=" << av_get_picture_type_char(frame->pict_type)
-              << ", size=" << frame->pkt_size << " bytes) pts " << frame->pts
-              << " [DTS " << frame->pkt_dts << "]";
-    */
 
     return statusCode;
 }
@@ -90,7 +76,7 @@ int enc(AVCodecContext *codecContext, AVFrame* frame, AVPacket* packet) {
 int main(int argc, char **argv) {
 
     initLogger(LOG_LEVEL_DEBUG);
-    av_log_set_level(AV_LOG_TRACE);
+    av_log_set_level(AV_LOG_WARNING);
 
     // register ffmpeg
     av_register_all();
@@ -158,8 +144,8 @@ int main(int argc, char **argv) {
     std::cout << "\n==================== INPUT STREAM END =====================\n" << std::endl;
 
     // encoder
-    const std::string fileExtension = "mp4";
-    std::string url = "/home/itis/video.mp4";
+    const std::string fileExtension = "rtp";
+    std::string url = "rtp://0.0.0.0:6005";
     AVFormatContext* outFormatCtx = nullptr;
     AVStream* outStream           = nullptr;
     AVCodec* encoderCodec         = nullptr;
@@ -187,9 +173,11 @@ int main(int argc, char **argv) {
     outCodecCtx->width        = WIDTH;
     outCodecCtx->height       = HEIGHT;
     outCodecCtx->pix_fmt      = AV_PIX_FMT_YUV422P;
-    outCodecCtx->profile      = FF_PROFILE_H264_HIGH_422_INTRA;
+    outCodecCtx->profile      = FF_PROFILE_H264_HIGH_422;
     outCodecCtx->time_base    = (AVRational) {1, FRAMERATE};
     outCodecCtx->framerate    = (AVRational) {FRAMERATE, 1};
+    outCodecCtx->gop_size     = 10;
+
     if (outFormatCtx->oformat->flags & AVFMT_GLOBALHEADER) {
         outCodecCtx->flags |= AVFMT_GLOBALHEADER;
     }
@@ -198,8 +186,8 @@ int main(int argc, char **argv) {
     avcodec_parameters_from_context(outStream->codecpar, outCodecCtx);
 
     // see https://trac.ffmpeg.org/wiki/Encode/H.264
-//    av_dict_set_int(&opts, "crf", 10, 0);
-    av_dict_set(&opts, "preset", "fast", 0);
+//    av_dict_set_int(&opts, "crf", 5, 0);
+//    av_dict_set(&opts, "preset", "slow", 0);
     av_dict_set(&opts, "tune", "zerolatency", 0);
 
     // initialize output format context to use the given codec
@@ -207,16 +195,17 @@ int main(int argc, char **argv) {
     av_dict_free(&opts);
     assert(statusCode == 0);
 
-    // print debug info
-    av_dump_format(outFormatCtx, outVideoStreamIdx, url.data(), 1);
-
     // open file to write
     if (!(outFormatCtx->flags & AVFMT_NOFILE)) {
         avio_open(&outFormatCtx->pb, url.data(), AVIO_FLAG_WRITE);
     }
 
+    // write header, timebase now is set
     statusCode = avformat_write_header(outFormatCtx, nullptr);
     assert(statusCode >= 0);
+
+    // print debug info
+    av_dump_format(outFormatCtx, outVideoStreamIdx, url.data(), 1);
 
     // create frame to be encoded
     AVFrame* convertedFrame = av_frame_alloc();
@@ -233,7 +222,7 @@ int main(int argc, char **argv) {
                                                       inCodecCtx->pix_fmt,
                                                       outCodecCtx->width, outCodecCtx->height,
                                                       outCodecCtx->pix_fmt,
-                                                      SWS_BICUBIC, nullptr, nullptr, nullptr);
+                                                      SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
 
     // create packet
     AVPacket* packet = av_packet_alloc();
@@ -243,10 +232,10 @@ int main(int argc, char **argv) {
     AVFrame* rawFrame = av_frame_alloc();
     assert(rawFrame);
 
-    int counter = FRAMERATE * 3; // 10 seconds
+    int counter = FRAMERATE * 10; // 10 seconds
 
     // fill the packet with data from the input stream (raw data)
-    while (av_read_frame(inFormatCtx, packet) == 0 && counter --> 0) {
+    while (av_read_frame(inFormatCtx, packet) == 0) {
 
         // if it's the video stream
         if (packet->stream_index == inVideoStreamIdx) {
@@ -285,7 +274,7 @@ int main(int argc, char **argv) {
     }
 
     // flush the encoder
-    statusCode = enc(outCodecCtx, nullptr, packet);
+    enc(outCodecCtx, nullptr, packet);
 
     // write the trailer
     statusCode = av_write_trailer(outFormatCtx);

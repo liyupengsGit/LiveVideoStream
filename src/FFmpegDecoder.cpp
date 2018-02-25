@@ -8,7 +8,6 @@
  *  - check timestamp is valid and present
  *  - Rename logger.h to Logger.hpp
  *  - Add comments to the FFmpegDecoder.hpp
- *  -
  */
 
 namespace LIRS {
@@ -118,12 +117,13 @@ namespace LIRS {
     void FFmpegDecoder::decodeLoop() {
 
         int statusCode;
-        int counter = 64;
+        int counter = 128;
 
-        // create and init packet
+        // create a packet to hold compressed video data
         auto packet = av_packet_alloc();
         av_init_packet(packet);
 
+        // create a frame to hold raw video data
         auto rawFrame = av_frame_alloc();
 
         // fill the packet with a raw data from the input stream

@@ -1,6 +1,7 @@
-#include "FFmpegDecoder.hpp"
+//#include "FFmpegDecoder.hpp"
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
+#include "Encoder.hpp"
 
 const char* SOURCE = "/dev/video0";
 constexpr int WIDTH = 640;
@@ -59,11 +60,11 @@ int main(int argc, char **argv) {
     initLogger(log4cpp::Priority::DEBUG);
     av_log_set_level(AV_LOG_TRACE);
 
-    LOG(DEBUG) << "Start decoding ...";
+    LOG(DEBUG) << "Start ...";
 
     using namespace LIRS;
 
-
+    /*
     DecoderParams params{};
     params.pixelFormat = "yuyv422";
     params.frameHeight = HEIGHT;
@@ -75,6 +76,11 @@ int main(int argc, char **argv) {
     decoder->decodeLoop();
 
     delete(decoder);
+    */
+
+    Encoder* encoder = new Encoder();
+
+    delete(encoder);
 
     LOG(WARN) << "Done.";
 

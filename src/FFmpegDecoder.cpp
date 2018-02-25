@@ -1,70 +1,79 @@
 #include "FFmpegDecoder.hpp"
-#include "Utils.hpp"
-#include "logger.h"
-#include <thread>
+
+#include <utility>
 
 /**
- * @todo remove asserts, don't use hardcoded opts, throw exceptions on errors
- * check timestamp is valid and present.
+ * @todo
+ *  - remove asserts, don't use hardcoded opts, throw exceptions on errors
+ *  - check timestamp is valid and present
+ *  - Rename logger.h to Logger.hpp
+ *  - Add comments to the FFmpegDecoder.hpp
+ *  -
  */
 
 namespace LIRS {
 
-    FFmpegDecoder::FFmpegDecoder(std::string videoSourcePath, DecoderParams params)
+    FFmpegDecoder::FFmpegDecoder(std::string videoSourcePath, const DecoderParams& params)
             : Decoder(std::move(videoSourcePath), params),
-              pCodecCtx(nullptr), pFormatCtx(nullptr), pImageConvertCtx(nullptr),
-              pFrame(nullptr), videoStreamIdx(-1)
-    {
+              formatContext(nullptr), codecContext(nullptr), codec(nullptr),
+              videoStream(nullptr), videoStreamIndex(-1), options(nullptr) {
+
         registerAll();
 
-        pFormatCtx = avformat_alloc_context();
-        assert(pFormatCtx);
+        // holds the general (header) information about the format (container)
+        formatContext = avformat_alloc_context();
+        assert(formatContext);
 
-        int statusCode = openInputStream();
-        assert(statusCode >= 0);
+        // input format (video4linux device)
+        auto inputFormat = av_find_input_format("v4l2");
+        assert(inputFormat);
 
-        statusCode = avformat_find_stream_info(pFormatCtx, nullptr);
-        assert(statusCode >= 0);
+        // set demuxer options
+        auto frameResolution = utils::concatParams({_frameWidth, _frameHeight}, "x");
+        av_dict_set_int(&options, "framerate", _frameRate, 0);
+        av_dict_set(&options, "video_size", frameResolution.data(), 0);
+        av_dict_set(&options, "pixel_format", _pixelFormat.data(), 0);
 
-        av_dump_format(pFormatCtx, 0, _videoSourcePath.data(), 0); // VERBOSE
-
-        findVideoInputStream(); // find and set video stream index parameter
-
-        auto pVideoStream = pFormatCtx->streams[videoStreamIdx];
-
-        statusCode = initializeCodecContext(pVideoStream->codecpar);
+        // open an input stream
+        int statusCode = avformat_open_input(&formatContext, _videoSourcePath.data(), inputFormat, &options);
+        av_dict_free(&options);
         assert(statusCode == 0);
 
-        pFrame = av_frame_alloc();
-        assert(pFrame);
+        // read packets to get information about all of the streams
+        statusCode = avformat_find_stream_info(formatContext, nullptr);
+        assert(statusCode >= 0);
 
-        AVPixelFormat pixelFormat = AV_PIX_FMT_BGR24; // todo experiment on this, make it member of the base class
+        av_dump_format(formatContext, 0, videoSourcePath.data(), 0);
 
-        initializeFrame(pixelFormat, pFrame);
+        // find video stream among other streams (find video stream index)
+        videoStreamIndex = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
+        assert(videoStreamIndex >= 0);
+        assert(codec);
+        videoStream = formatContext->streams[statusCode];
 
-        // create converter (converts raw image data into the specified pixel format)
-        pImageConvertCtx = sws_getCachedContext(nullptr, pCodecCtx->width, pCodecCtx->height, pCodecCtx->pix_fmt,
-                                                pCodecCtx->width, pCodecCtx->height, pixelFormat, SWS_BICUBIC,
-                                                nullptr, nullptr, nullptr);
-        assert(pImageConvertCtx);
+        // create codec context for the codec
+        codecContext = avcodec_alloc_context3(codec);
+        assert(codecContext);
 
-        _frameHeight = static_cast<size_t>(pCodecCtx->height);
-        _frameWidth  = static_cast<size_t>(pCodecCtx->width);
-        _bitRate     = static_cast<size_t>(pFormatCtx->bit_rate);
-        _frameRate   = static_cast<size_t>(pVideoStream->avg_frame_rate.num / pVideoStream->avg_frame_rate.den);
+        // copy video stream parameters to the created codec context
+        statusCode = avcodec_parameters_to_context(codecContext, videoStream->codecpar);
+        assert(statusCode >= 0);
+
+        // initialize the codec context to use the given codec
+        statusCode = avcodec_open2(codecContext, codec, &options);
+        assert(statusCode == 0);
+
+        // save bit rate info
+        _bitRate = static_cast<size_t>(videoStream->codecpar->bit_rate);
     }
 
 
     FFmpegDecoder::~FFmpegDecoder() {
-
-        LOG(INFO) << "Destructing decoder";
-
-        sws_freeContext(pImageConvertCtx);
-        av_frame_unref(pFrame);
-        av_frame_free(&pFrame);
-        avcodec_free_context(&pCodecCtx);
-        avformat_close_input(&pFormatCtx);
-        avformat_free_context(pFormatCtx);
+        av_dict_free(&options);
+        avcodec_free_context(&codecContext);
+        avformat_close_input(&formatContext);
+        avformat_free_context(formatContext);
+        videoStreamIndex = -1;
     }
 
 
@@ -75,118 +84,74 @@ namespace LIRS {
     }
 
 
-    int FFmpegDecoder::decodeVideo(AVCodecContext *codecContext, AVFrame *frame, bool &gotFrame, AVPacket *packet) {
+    int FFmpegDecoder::decode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
 
-        int statusCode = 0;
-        gotFrame = false;
+        int statusCode = avcodec_send_packet(codecContext, packet);
 
-        statusCode = avcodec_send_packet(codecContext, packet);
-
-        // the end of stream has been reached (EOF) or error
-        if (statusCode < 0) return statusCode == AVERROR_EOF ? 0 : statusCode;
-
-        statusCode = avcodec_receive_frame(codecContext, frame);
-
-        if (statusCode < 0 && statusCode != AVERROR(EAGAIN) && statusCode != AVERROR_EOF) {
+        // couldn't send packet to the decoder
+        if (statusCode < 0) {
+            LOG(ERROR) << "Error sending packet for decoding";
             return statusCode;
         }
 
-        if (statusCode >= 0) gotFrame = true;
+        statusCode = avcodec_receive_frame(codecContext, frame);
 
-        return 0;
-    }
-
-
-    void FFmpegDecoder::decodeLoop() {
-
-        AVFrame *pRawFrame = av_frame_alloc();
-        AVPacket packet{};
-
-        bool gotFrame = false;
-        int statusCode = 0;
-
-        while (av_read_frame(pFormatCtx, &packet) == 0) {
-
-            if (packet.buf && packet.stream_index == videoStreamIdx) {
-
-                // try to get a frame
-                statusCode = decodeVideo(pCodecCtx, pRawFrame, gotFrame, &packet);
-
-                if (statusCode != 0) {
-                    LOG(WARN) << "Frame was not captured, error code: " << statusCode;
-                }
-
-                if (gotFrame) {
-
-                    // convert image to the specified format
-                    sws_scale(pImageConvertCtx, reinterpret_cast<const uint8_t *const *>(pRawFrame->data),
-                              pRawFrame->linesize, 0, (int) _frameHeight,
-                              pFrame->data, pFrame->linesize);
-
-                    // calling the callback function
-                    _onFrameCallback(pFrame->data[0]);
-                }
-
-                av_packet_unref(&packet);
-            }
+        if (statusCode == AVERROR(EAGAIN)) {
+            LOG(WARN) << "Unable to read output. Try to send new input";
+            return statusCode;
         }
 
-        av_frame_free(&pRawFrame);
-        av_packet_unref(&packet);
-    }
-
-
-    int FFmpegDecoder::openInputStream() {
-
-        auto pInputFormat = av_find_input_format("v4l2"); // open a video4linux2 input
-        assert(pInputFormat);
-
-        AVDictionary *opts = nullptr;
-        av_dict_set(&opts, "framerate", std::to_string(_frameRate).c_str(), 0);
-        av_dict_set(&opts, "video_size", utils::concatParams({_frameWidth, _frameHeight}, "x").c_str(), 0);
-        av_dict_set(&opts, "pixel_format", "yuyv422", 0); // todo eliminate hardcoded pixel format
-
-        return avformat_open_input(&pFormatCtx, _videoSourcePath.data(), pInputFormat, &opts);
-    }
-
-
-    void FFmpegDecoder::findVideoInputStream() {
-
-        for (uint i = 0; i < pFormatCtx->nb_streams; ++i) {
-            if (pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-                videoStreamIdx = i;
-                break;
-            }
+        if (statusCode == AVERROR_EOF) {
+            LOG(WARN) << "End of stream has been reached";
+            return statusCode;
         }
-        assert(videoStreamIdx >= 0);
-    }
 
-
-    int FFmpegDecoder::initializeCodecContext(const AVCodecParameters* pCodecParameters) {
-
-        auto pCodec = avcodec_find_decoder(pCodecParameters->codec_id);
-
-        pCodecCtx = avcodec_alloc_context3(pCodec);
-        assert(pCodec && pCodecCtx);
-
-        int statusCode = avcodec_parameters_to_context(pCodecCtx, pCodecParameters);
-        assert(statusCode >= 0);
-
-        statusCode = avcodec_open2(pCodecCtx, pCodec, nullptr);
+        if (statusCode < 0) {
+            LOG(ERROR) << "Error during decoding";
+            return statusCode;
+        }
 
         return statusCode;
     }
 
 
-    int FFmpegDecoder::initializeFrame(AVPixelFormat pixelFormat, AVFrame* pFrame) {
+    void FFmpegDecoder::decodeLoop() {
 
-        int numBytes = av_image_get_buffer_size(pixelFormat, pCodecCtx->width, pCodecCtx->height, 1);
-        assert(numBytes > 0);
+        int statusCode;
+        int counter = 64;
 
-        buffer.reserve((size_t) numBytes + AV_INPUT_BUFFER_PADDING_SIZE); // actual buffer is bigger
+        // create and init packet
+        auto packet = av_packet_alloc();
+        av_init_packet(packet);
 
-        return av_image_fill_arrays(pFrame->data, pFrame->linesize, buffer.data(), pixelFormat,
-                             pCodecCtx->width, pCodecCtx->height, 1); // todo align? why eq to 1?
+        auto rawFrame = av_frame_alloc();
+
+        // fill the packet with a raw data from the input stream
+        while (av_read_frame(formatContext, packet) == 0 && counter --> 0) {
+
+            // if it is a video stream's data (may be from the audio stream)
+            if (packet->stream_index == videoStreamIndex) {
+
+                // decode packet (retrieve frame)
+                statusCode = decode(codecContext, rawFrame, packet);
+
+                // if the packet is successfully decoded
+                if (statusCode >= 0) {
+
+                    if (_onFrameCallback) {
+
+                        // todo copy the frame??? or allocate new frame each time
+                        _onFrameCallback(rawFrame->data[0]); // callback
+                    }
+                }
+            }
+
+            // cleanup the packet
+            av_packet_unref(packet);
+        }
+
+        // cleanup the packet and frame
+        av_packet_free(&packet);
+        av_frame_free(&rawFrame);
     }
-
 }

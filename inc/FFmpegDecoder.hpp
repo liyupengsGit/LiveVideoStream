@@ -2,12 +2,14 @@
 #define LIVE_VIDEO_STREAM_FFMPEG_DECODER_HPP
 
 #include "Decoder.hpp" // abstract base class for decoders
-#include <vector>
+#include "Utils.hpp"
+#include "Logger.hpp"
 
 #ifdef __cplusplus
 extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
 #include <libavdevice/avdevice.h>
-#include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
 }
 #endif
@@ -20,7 +22,7 @@ namespace LIRS {
     class FFmpegDecoder : public Decoder {
     public:
 
-        explicit FFmpegDecoder(std::string videoSourcePath, DecoderParams params = {});
+        FFmpegDecoder(std::string videoSourcePath, const DecoderParams& params);
 
         void decodeLoop() override;
 
@@ -28,25 +30,14 @@ namespace LIRS {
 
     private:
 
-        AVCodecContext *pCodecCtx;
-        AVFormatContext *pFormatCtx;
-        SwsContext *pImageConvertCtx;
+        AVFormatContext *formatContext;
+        AVCodecContext *codecContext;
+        AVCodec *codec;
 
-        /**
-         * Structure that describes decoded (raw) video data.
-         * Holds pointers to the decoded frames.
-         */
-        AVFrame *pFrame;
+        AVStream *videoStream;
+        int videoStreamIndex;
 
-        /**
-         * Video stream index.
-         */
-        int videoStreamIdx;
-
-        /**
-         * Buffer for holding video frame's data.
-         */
-        std::vector<uint8_t> buffer;
+        AVDictionary *options;
 
         /**
          * Initializes ffmpeg environment registering all available codecs,
@@ -59,46 +50,10 @@ namespace LIRS {
          *
          * @param codecContext codec context.
          * @param frame raw image frame which is to be populated with data.
-         * @param gotFrame flag is set to true when a frame was successively captured otherwise it is set to false.
          * @param packet packet to be sent to the decoder.
-         * @return 0 - if success, otherwise ffmpeg error code.
+         * @return >= 0 - if success, otherwise ffmpeg error code (AVERROR).
          */
-        int decodeVideo(AVCodecContext *codecContext, AVFrame *frame, bool &gotFrame, AVPacket *packet);
-
-        /*
-         * Opens an input stream using video4linux.
-         * Frame rate, width and height are used in order to
-         * set stream parameters.
-         *
-         * @return 0 - on success, otherwise ffmpeg error.
-         */
-        int openInputStream();
-
-        /**
-         * Finds and sets the video stream index parameter.
-         * Sets video stream index to -1 in case of when no video stream is found.
-         */
-        void findVideoInputStream();
-
-        /**
-         * Initializes codec context with codec.
-         * Allocates codec context, initializes it to use the given codec.
-         *
-         * @param codecParameters codec parameters.
-         * @return 0 - on success, otherwise ffmpeg error.
-         */
-        int initializeCodecContext(const AVCodecParameters *codecParameters);
-
-        /**
-         * Initializes frame.
-         * Allocates buffer which will contain image data.
-         * Sets up frame's pointer to the buffer.
-         *
-         * @param pixelFormat image data pixel format, i.e. "yuyv422", "bgr24".
-         * @param pFrame frame to be initialized.
-         * @return the size in bytes needed for the image, negative ffmpeg error code.
-         */
-        int initializeFrame(AVPixelFormat pixelFormat, AVFrame *pFrame);
+        int decode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet);
 
     };
 }

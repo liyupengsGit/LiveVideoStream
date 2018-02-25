@@ -1,42 +1,11 @@
-#include "logger.h"
 #include "FFmpegDecoder.hpp"
-#include "Encoder.hpp"
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
 
-#define VIDEO_SOURCE "/dev/video0"
-
+const char* SOURCE = "/dev/video0";
 constexpr int WIDTH = 640;
 constexpr int HEIGHT = 480;
 constexpr int FRAMERATE = 15;
-
-int dec(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
-
-    int statusCode = avcodec_send_packet(codecContext, packet);
-
-    // couldn't send packet to the decoder
-    if (statusCode < 0) {
-        LOG(ERROR) << "Error sending packet for decoding";
-        return statusCode;
-    }
-
-    statusCode = avcodec_receive_frame(codecContext, frame);
-
-    if (statusCode == AVERROR(EAGAIN)) {
-        LOG(WARN) << "Unable to read output. Try to send new input";
-        return statusCode;
-    }
-
-    if (statusCode == AVERROR_EOF) {
-        LOG(WARN) << "End of stream has been reached";
-        return statusCode;
-    }
-
-    if (statusCode < 0) {
-        LOG(ERROR) << "Error during decoding";
-        return statusCode;
-    }
-
-    return statusCode;
-}
 
 int enc(AVCodecContext *codecContext, AVFrame* frame, AVPacket* packet) {
 
@@ -73,229 +42,41 @@ int enc(AVCodecContext *codecContext, AVFrame* frame, AVPacket* packet) {
     return statusCode;
 }
 
+void opencvCallback(uint8_t* data) {
+    cv::Mat raw(HEIGHT, WIDTH, CV_8UC2, data);
+    cv::Mat bgr24;
+    cv::cvtColor(raw, bgr24, CV_YUV2BGR_YUYV);
+    cv::imshow("Stream", bgr24);
+    cv::waitKey(1);
+}
+
+void simpleCallback(uint8_t* data) {
+    LOG(INFO) << "Received frame";
+}
+
 int main(int argc, char **argv) {
 
-    initLogger(LOG_LEVEL_DEBUG);
-    av_log_set_level(AV_LOG_WARNING);
+    initLogger(log4cpp::Priority::DEBUG);
+    av_log_set_level(AV_LOG_TRACE);
 
-    // register ffmpeg
-    av_register_all();
-    avcodec_register_all();
-    avdevice_register_all();
-    avformat_network_init();
+    LOG(DEBUG) << "Start decoding ...";
 
-    int statusCode;
+    using namespace LIRS;
 
-    // decoder
-    AVDictionary* opts           = nullptr;
-    AVCodecContext* inCodecCtx   = nullptr;
-    AVFormatContext* inFormatCtx = nullptr;
-    AVInputFormat* inFormat      = nullptr;
-    AVStream* inStream           = nullptr;
-    AVCodec* decoderCodec        = nullptr;
-    int inVideoStreamIdx         = -1;      // index of the video stream
 
-    // holds the general (header) information about the format (container)
-    inFormatCtx = avformat_alloc_context();
-    assert(inFormatCtx);
+    DecoderParams params{};
+    params.pixelFormat = "yuyv422";
+    params.frameHeight = HEIGHT;
+    params.frameWidth = WIDTH;
+    params.frameRate = FRAMERATE;
 
-    // input format (video4linux device)
-    inFormat = av_find_input_format("v4l2");
-    assert(inFormat);
+    Decoder* decoder = new FFmpegDecoder(SOURCE, params);
+    decoder->setOnFrameCallback(simpleCallback);
+    decoder->decodeLoop();
 
-    // set demuxer options
-    av_dict_set_int(&opts, "framerate", FRAMERATE, 0);
-    av_dict_set(&opts, "video_size", "640x480", 0);
-    av_dict_set(&opts, "pixel_format", "yuyv422", 0);
+    delete(decoder);
 
-    // open an input stream and read header
-    statusCode = avformat_open_input(&inFormatCtx, VIDEO_SOURCE, inFormat, &opts);
-    av_dict_free(&opts);
-    assert(statusCode == 0);
-
-    // read packets to get information about all of the streams
-    statusCode = avformat_find_stream_info(inFormatCtx, nullptr);
-    assert(statusCode >= 0);
-
-    // print debug information
-    av_dump_format(inFormatCtx, 0, VIDEO_SOURCE, 0);
-
-    // find video stream among others (if present)
-    inVideoStreamIdx = av_find_best_stream(inFormatCtx, AVMEDIA_TYPE_VIDEO, -1, -1, &decoderCodec, 0);
-    assert(inVideoStreamIdx >= 0);
-
-    // save reference to the found video stream
-    inStream = inFormatCtx->streams[inVideoStreamIdx];
-    assert(decoderCodec);
-    assert(inStream);
-
-    // create codec context for the specified codec
-    inCodecCtx = avcodec_alloc_context3(decoderCodec);
-    assert(inCodecCtx);
-
-    // fill the codec context with the supplied video stream parameters
-    statusCode = avcodec_parameters_to_context(inCodecCtx, inStream->codecpar);
-    assert(statusCode >= 0);
-
-    // initialize the codec context to use the given codec
-    statusCode = avcodec_open2(inCodecCtx, decoderCodec, nullptr);
-    assert(statusCode == 0);
-
-    std::cout << "\n==================== INPUT STREAM END =====================\n" << std::endl;
-
-    // encoder
-    const std::string fileExtension = "rtp";
-    std::string url = "rtp://0.0.0.0:6005";
-    AVFormatContext* outFormatCtx = nullptr;
-    AVStream* outStream           = nullptr;
-    AVCodec* encoderCodec         = nullptr;
-    AVCodecContext* outCodecCtx   = nullptr;
-    int outVideoStreamIdx         = -1;
-
-    // allocate format context for an output format
-    statusCode = avformat_alloc_output_context2(&outFormatCtx, nullptr, fileExtension.data(), url.data());
-    assert(statusCode >= 0);
-
-    // find codec for encoding (H.264)
-    encoderCodec = avcodec_find_encoder_by_name("libx264");
-    assert(encoderCodec);
-
-    // create new video output stream
-    outStream = avformat_new_stream(outFormatCtx, encoderCodec);
-    assert(outStream);
-    outVideoStreamIdx = outStream->index;
-
-    // create codec context
-    outCodecCtx = avcodec_alloc_context3(encoderCodec);
-    assert(outCodecCtx);
-
-    // set up codec context
-    outCodecCtx->width        = WIDTH;
-    outCodecCtx->height       = HEIGHT;
-    outCodecCtx->pix_fmt      = AV_PIX_FMT_YUV422P;
-    outCodecCtx->profile      = FF_PROFILE_H264_HIGH_422;
-    outCodecCtx->time_base    = (AVRational) {1, FRAMERATE};
-    outCodecCtx->framerate    = (AVRational) {FRAMERATE, 1};
-    outCodecCtx->gop_size     = 10;
-
-    if (outFormatCtx->oformat->flags & AVFMT_GLOBALHEADER) {
-        outCodecCtx->flags |= AVFMT_GLOBALHEADER;
-    }
-
-    // copy codec parameters from codec context
-    avcodec_parameters_from_context(outStream->codecpar, outCodecCtx);
-
-    // see https://trac.ffmpeg.org/wiki/Encode/H.264
-//    av_dict_set_int(&opts, "crf", 5, 0);
-//    av_dict_set(&opts, "preset", "slow", 0);
-    av_dict_set(&opts, "tune", "zerolatency", 0);
-
-    // initialize output format context to use the given codec
-    statusCode = avcodec_open2(outCodecCtx, encoderCodec, &opts);
-    av_dict_free(&opts);
-    assert(statusCode == 0);
-
-    // open file to write
-    if (!(outFormatCtx->flags & AVFMT_NOFILE)) {
-        avio_open(&outFormatCtx->pb, url.data(), AVIO_FLAG_WRITE);
-    }
-
-    // write header, timebase now is set
-    statusCode = avformat_write_header(outFormatCtx, nullptr);
-    assert(statusCode >= 0);
-
-    // print debug info
-    av_dump_format(outFormatCtx, outVideoStreamIdx, url.data(), 1);
-
-    // create frame to be encoded
-    AVFrame* convertedFrame = av_frame_alloc();
-    assert(convertedFrame);
-
-    convertedFrame->width   = outCodecCtx->width;
-    convertedFrame->height  = outCodecCtx->height;
-    convertedFrame->format  = outCodecCtx->pix_fmt;
-    statusCode = av_frame_get_buffer(convertedFrame, 32);
-    assert(statusCode == 0);
-
-    // converter
-    SwsContext* imageConverter = sws_getCachedContext(nullptr, inCodecCtx->width, inCodecCtx->height,
-                                                      inCodecCtx->pix_fmt,
-                                                      outCodecCtx->width, outCodecCtx->height,
-                                                      outCodecCtx->pix_fmt,
-                                                      SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
-
-    // create packet
-    AVPacket* packet = av_packet_alloc();
-    assert(packet);
-    av_init_packet(packet);
-
-    AVFrame* rawFrame = av_frame_alloc();
-    assert(rawFrame);
-
-    int counter = FRAMERATE * 10; // 10 seconds
-
-    // fill the packet with data from the input stream (raw data)
-    while (av_read_frame(inFormatCtx, packet) == 0) {
-
-        // if it's the video stream
-        if (packet->stream_index == inVideoStreamIdx) {
-
-            // decode packet (retrieve frame)
-            statusCode = dec(inCodecCtx, rawFrame, packet);
-
-            av_frame_make_writable(convertedFrame);
-
-            if (statusCode >= 0) {
-
-                sws_scale(imageConverter, reinterpret_cast<const uint8_t *const *>(rawFrame->data),
-                          rawFrame->linesize, 0, inCodecCtx->height,
-                          convertedFrame->data, convertedFrame->linesize);
-
-                // copy PTS, DTS, etc. to the converted frame
-                av_frame_copy_props(convertedFrame, rawFrame);
-
-                statusCode = enc(outCodecCtx, convertedFrame, packet);
-
-                if (statusCode >= 0) {
-
-                    // rescale timestamp
-                    av_packet_rescale_ts(packet, inStream->time_base, outStream->time_base);
-
-                    statusCode = av_write_frame(outFormatCtx, packet);
-                    assert(statusCode == 0);
-                }
-
-            } else {
-                break; // reached end of stream or error occurred
-            }
-        }
-
-        av_packet_unref(packet);
-    }
-
-    // flush the encoder
-    enc(outCodecCtx, nullptr, packet);
-
-    // write the trailer
-    statusCode = av_write_trailer(outFormatCtx);
-    assert(statusCode == 0);
-
-    // free all allocated memory and close opened files
-    avio_close(outFormatCtx->pb);
-
-    sws_freeContext(imageConverter);
-
-    av_packet_free(&packet);
-    av_frame_free(&rawFrame);
-    av_frame_free(&convertedFrame);
-
-    avcodec_free_context(&inCodecCtx);
-    avcodec_free_context(&outCodecCtx);
-
-    avformat_close_input(&inFormatCtx);
-
-    avformat_free_context(inFormatCtx);
-    avformat_free_context(outFormatCtx);
+    LOG(WARN) << "Done.";
 
     return 0;
 }

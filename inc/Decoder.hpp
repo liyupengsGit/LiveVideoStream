@@ -10,9 +10,10 @@ namespace LIRS {
      * Decoder parameters.
      */
     typedef struct DecoderParams {
-        size_t frameHeight;
         size_t frameWidth;
+        size_t frameHeight;
         size_t frameRate;
+        std::string pixelFormat;
     } DecoderParams;
 
     /**
@@ -27,10 +28,7 @@ namespace LIRS {
          * @param videoSourcePath path to the video source, i.e. "/dev/video0".
          * @param params parameters of the decoder, i.e. frame rate.
          */
-        explicit Decoder(std::string videoSourcePath, DecoderParams params = {}) :
-                _videoSourcePath(std::move(videoSourcePath)),
-                _frameHeight(params.frameHeight), _frameWidth(params.frameWidth),
-                _frameRate(params.frameRate), _bitRate(0) {}
+        explicit Decoder(std::string videoSourcePath, DecoderParams params = {});
 
         /**
          * Loop capturing video frames and invoking the specified callback.
@@ -38,7 +36,9 @@ namespace LIRS {
         virtual void decodeLoop() = 0;
 
         // getters and setters
-        const std::string getVideoSourcePath() const;
+        const std::string &getVideoSourcePath() const;
+
+        const std::string &getPixelFormat() const;
 
         size_t getFrameHeight() const;
 
@@ -48,13 +48,14 @@ namespace LIRS {
 
         size_t getBitRate() const;
 
+
         void setOnFrameCallback(const std::function<void(uint8_t *)> &onFrameCallback);
         // end of getters and setters
 
         /**
          * Nothing to say, it's simply destructor.
          */
-        virtual ~Decoder() = default;
+        virtual ~Decoder();
 
         // restrict move & copy constructor and assignment operator
         Decoder(Decoder &&) = delete;
@@ -68,6 +69,12 @@ namespace LIRS {
          * Path to the video resource, i.e. "/dev/video0".
          */
         std::string _videoSourcePath;
+
+        /**
+         * Pixel format of raw frame data.
+         * i.e bayer, yuyv422
+         */
+        std::string _pixelFormat;
 
         /**
          * Height of the captured frame.

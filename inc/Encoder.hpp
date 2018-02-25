@@ -7,7 +7,7 @@
 #include <mutex>
 #include <libavutil/error.h>
 
-#include "logger.h"
+#include "Logger.hpp"
 
 #ifdef __cplusplus
 extern "C" {

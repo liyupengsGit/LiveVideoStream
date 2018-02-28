@@ -72,8 +72,18 @@ namespace LIRS {
 
                     if (decode(decoderContext.codecContext, rawFrame, packet)) {
 
-                        LOG(INFO) << "Got frame: "
-                                  << av_image_get_buffer_size(rawPixFormat, (int) frameWidth, (int) frameHeight, 32);
+                        sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(rawFrame->data),
+                                  rawFrame->linesize, 0, static_cast<int>(frameHeight), convertedFrame->data,
+                                  convertedFrame->linesize);
+
+                        av_frame_copy_props(convertedFrame, rawFrame);
+
+                        if (encode(encoderContext.codecContext, convertedFrame, packet)) {
+
+                            av_packet_rescale_ts(packet, decoderContext.videoStream->time_base, encoderContext.videoStream->time_base);
+
+                            LOG(WARN) << "Done";
+                        }
                     }
                 }
                 av_packet_unref(packet);
@@ -281,11 +291,35 @@ namespace LIRS {
 
         void cleanupEncoder() {
 
+            sws_freeContext(converterContext);
+
+            av_frame_free(&convertedFrame);
+            avcodec_free_context(&encoderContext.codecContext);
+            avformat_free_context(encoderContext.formatContext);
         }
 
-        bool encode() {
+        bool encode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
 
-            auto statCode = 1UL;
+            auto statCode = avcodec_send_frame(codecContext, frame);
+
+            if (statCode < 0) {
+                LOG(ERROR) << "Error during sending frame for encoding";
+                return false;
+            }
+
+            while (statCode >= 0) {
+
+                statCode = avcodec_receive_packet(codecContext, packet);
+
+                if (statCode == AVERROR(EAGAIN) || statCode == AVERROR_EOF) {
+                    return false;
+                }
+
+                if (statCode < 0) {
+                    LOG(ERROR) << "Error during recieving packet for encoding";
+                    return false;
+                }
+            }
 
             return true;
         }
@@ -294,7 +328,7 @@ namespace LIRS {
 
             convertedFrame = av_frame_alloc();
             convertedFrame->width = static_cast<int>(frameWidth);
-            convertedFrame->height = static_cast<int>(frameRate);
+            convertedFrame->height = static_cast<int>(frameHeight);
             convertedFrame->format = encoderPixFormat;
             auto statCode = av_frame_get_buffer(convertedFrame, 0);
             assert(statCode == 0);
@@ -304,9 +338,10 @@ namespace LIRS {
                                                     rawPixFormat,
                                                     static_cast<int>(frameWidth), static_cast<int>(frameHeight),
                                                     encoderPixFormat, SWS_BICUBIC, nullptr, nullptr, nullptr);
-
         };
 
-    }
+
+    };
+}
 
 #endif //LIVE_VIDEO_STREAM_TRANSCODER_HPP

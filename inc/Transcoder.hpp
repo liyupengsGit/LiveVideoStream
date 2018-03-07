@@ -5,6 +5,8 @@
 #include <chrono>
 #include <thread>
 #include <utility>
+#include <mutex>
+#include <queue>
 
 #include "Utils.hpp"
 #include "Logger.hpp"
@@ -22,16 +24,6 @@ extern "C" {
 
 // TODO: add stop flag in order to halt the streaming process when needed (or only pause)
 namespace LIRS {
-
-    typedef struct TranscoderContext {
-        AVFormatContext *formatContext;
-        AVCodecContext *codecContext;
-        AVCodec *codec;
-        AVStream *videoStream;
-
-        TranscoderContext() : formatContext(nullptr), codecContext(nullptr), codec(nullptr), videoStream(nullptr) {}
-
-    } TranscoderContext;
 
     class Transcoder {
 
@@ -54,13 +46,23 @@ namespace LIRS {
         // destructor
         ~Transcoder() {
 
+            avio_close(encoderContext.formatContext->pb);
+
             sws_freeContext(converterContext);
             av_packet_free(&packet);
             av_frame_free(&rawFrame);
             av_frame_free(&convertedFrame);
 
-            cleanupTranscoder(encoderContext);
-            cleanupTranscoder(decoderContext);
+            avcodec_free_context(&decoderContext.codecContext);
+            avcodec_free_context(&encoderContext.codecContext);
+
+            avformat_close_input(&decoderContext.formatContext);
+
+            avformat_free_context(decoderContext.formatContext);
+            avformat_free_context(encoderContext.formatContext);
+
+            decoderContext = {};
+            encoderContext = {};
 
 
             videoSourceUrl.clear();
@@ -79,15 +81,13 @@ namespace LIRS {
         // decoder/encoder loop
         void playVideo() {
 
-            int counter = 128;
+            while (av_read_frame(decoderContext.formatContext, packet) == 0) {
 
-            while (av_read_frame(decoderContext.formatContext, packet) == 0 && counter-- > 0) {
+                if (packet->stream_index == decoderContext.videoStream->index) {
 
-                if (packet->data && packet->stream_index == decoderContext.videoStream->index) {
+                    if (decode(decoderContext.codecContext, rawFrame, packet) >= 0) {
 
-                    if (decode(decoderContext.codecContext, rawFrame, packet)) {
-
-                        if (callback) callback(rawFrame->data[0]);
+                        av_frame_make_writable(convertedFrame);
 
                         sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(rawFrame->data),
                                   rawFrame->linesize, 0, static_cast<int>(frameHeight), convertedFrame->data,
@@ -95,17 +95,41 @@ namespace LIRS {
 
                         av_frame_copy_props(convertedFrame, rawFrame);
 
-                        if (encode(encoderContext.codecContext, convertedFrame, packet)) {
+                        if (encode(encoderContext.codecContext, convertedFrame, packet) >= 0) {
 
                             av_packet_rescale_ts(packet, decoderContext.videoStream->time_base,
                                                  encoderContext.videoStream->time_base);
 
-                            LOG(WARN) << "Done";
+                            // put data into queue
+                            outQueueMutex.lock();
+                            // fixme: copy???
+                            outQueue.push(std::vector<uint8_t>(packet->data, packet->data + packet->size));
+                            outQueueMutex.unlock();
+
+                            if (onFrameCallback) {
+                                onFrameCallback();
+                            }
                         }
                     }
                 }
                 av_packet_unref(packet);
             }
+        }
+
+        bool retrieveFrame(std::vector<uint8_t> &frame) {
+            if (!outQueue.empty()) {
+                outQueueMutex.lock();
+                frame = outQueue.front();
+                outQueue.pop();
+                outQueueMutex.unlock();
+                return true;
+            }
+
+            return false;
+        }
+
+        void setOnFrameCallback(std::function<void()> callback) {
+            onFrameCallback = std::move(callback);
         }
 
 
@@ -128,10 +152,6 @@ namespace LIRS {
             initializeEncoder();
 
             initializeConverter();
-
-//            std::thread([&]() {
-//                playVideo();
-//            }).join();
         }
 
         /* parameters */
@@ -150,6 +170,16 @@ namespace LIRS {
         size_t sourceBitRate;
         size_t outputBitRate;
 
+        typedef struct TranscoderContext {
+            AVFormatContext *formatContext;
+            AVCodecContext *codecContext;
+            AVCodec *codec;
+            AVStream *videoStream;
+
+            TranscoderContext() : formatContext(nullptr), codecContext(nullptr), codec(nullptr), videoStream(nullptr) {}
+
+        } TranscoderContext;
+
         TranscoderContext decoderContext;
         TranscoderContext encoderContext;
 
@@ -159,7 +189,11 @@ namespace LIRS {
 
         SwsContext *converterContext;
 
+        std::mutex outQueueMutex;
+        std::queue<std::vector<uint8_t>> outQueue;
+
         /* Methods */
+
         void registerAll() {
             av_register_all();
             avdevice_register_all();
@@ -218,13 +252,14 @@ namespace LIRS {
         void initializeEncoder() {
 
             // allocate format context for an output format (no output file)
-            auto statCode = avformat_alloc_output_context2(&encoderContext.formatContext, nullptr, "mp4", "/home/itis/video.mp4");
+            auto statCode = avformat_alloc_output_context2(&encoderContext.formatContext, nullptr, "null", nullptr);
             assert(statCode >= 0);
 
             encoderContext.codec = avcodec_find_encoder_by_name("libx264"); // fixme: hardcoded
             assert(encoderContext.codec);
 
             // create new video output stream
+
             encoderContext.videoStream = avformat_new_stream(encoderContext.formatContext, encoderContext.codec);
             assert(encoderContext.videoStream);
             encoderContext.videoStream->id = encoderContext.formatContext->nb_streams - 1;
@@ -234,25 +269,27 @@ namespace LIRS {
             assert(encoderContext.codecContext);
 
             // set up parameters
-            // todo: add keyint for frame rate regulation
             encoderContext.codecContext->width = static_cast<int>(frameWidth);
             encoderContext.codecContext->height = static_cast<int>(frameHeight);
-            encoderContext.codecContext->bit_rate = outputBitRate;
-            encoderContext.codecContext->keyint_min = static_cast<int>(outputFrameRate);
-            encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(frameRate), 1};
-            encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(frameRate)};
             encoderContext.codecContext->profile = FF_PROFILE_H264_HIGH_422_INTRA;
+            encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(frameRate)};
+            encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(frameRate), 1};
             encoderContext.codecContext->pix_fmt = encoderPixFormat;
 
-            if (encoderContext.formatContext->flags & AVFMT_GLOBALHEADER) {
+            /*
+            if (encoderContext.formatContext->oformat->flags & AVFMT_GLOBALHEADER) {
                 encoderContext.codecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
             }
+            */
 
             avcodec_parameters_from_context(encoderContext.videoStream->codecpar, encoderContext.codecContext);
+            encoderContext.videoStream->r_frame_rate = (AVRational) {static_cast<int>(outputFrameRate), 1};
+            encoderContext.videoStream->avg_frame_rate = (AVRational) {static_cast<int>(outputFrameRate), 1};
 
             AVDictionary *options = nullptr;
             av_dict_set(&options, "preset", "fast", 0);
             av_dict_set(&options, "tune", "zerolatency", 0);
+            av_dict_set_int(&options, "b", outputBitRate, 0); // bitrate
 
             // open the output format to use given codec
             statCode = avcodec_open2(encoderContext.codecContext, encoderContext.codec, &options);
@@ -262,64 +299,56 @@ namespace LIRS {
             statCode = avformat_write_header(encoderContext.formatContext, nullptr);
             assert(statCode >= 0);
 
-            av_dump_format(encoderContext.formatContext, encoderContext.videoStream->index, videoSourceUrl.data(), 1);
+            av_dump_format(encoderContext.formatContext, encoderContext.videoStream->index, "null", 1);
         }
 
-        void cleanupTranscoder(TranscoderContext &ctx) {
-            avcodec_free_context(&ctx.codecContext);
-            avformat_close_input(&ctx.formatContext);
-            avformat_free_context(ctx.formatContext);
-            ctx = {};
-        }
-
-        bool decode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
+        int decode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
 
             auto statCode = avcodec_send_packet(codecContext, packet);
 
             if (statCode < 0) {
                 LOG(ERROR) << "Error sending a packet for decoding";
-                return false;
+                return statCode;
             }
 
             statCode = avcodec_receive_frame(codecContext, frame);
 
             if (statCode == AVERROR(EAGAIN) || statCode == AVERROR_EOF) {
                 LOG(WARN) << "No frames available or end of file has been reached";
-                return false;
+                return statCode;
             }
 
             if (statCode < 0) {
                 LOG(ERROR) << "Error during decoding";
-                return false;
+                return statCode;
             }
 
             return true;
         }
 
-        bool encode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
+        int encode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
 
             auto statCode = avcodec_send_frame(codecContext, frame);
 
             if (statCode < 0) {
                 LOG(ERROR) << "Error during sending frame for encoding";
-                return false;
+                return statCode;
             }
 
-            while (statCode >= 0) {
+            statCode = avcodec_receive_packet(codecContext, packet);
 
-                statCode = avcodec_receive_packet(codecContext, packet);
+            if (statCode == AVERROR(EAGAIN) || statCode == AVERROR_EOF) {
+                LOG(WARN) << "EAGAIN or EOF while encoding";
+                return statCode;
 
-                if (statCode == AVERROR(EAGAIN) || statCode == AVERROR_EOF) {
-                    return false;
-                }
-
-                if (statCode < 0) {
-                    LOG(ERROR) << "Error during recieving packet for encoding";
-                    return false;
-                }
             }
 
-            return true;
+            if (statCode < 0) {
+                LOG(ERROR) << "Error during receiving packet for encoding";
+                return statCode;
+            }
+
+            return statCode;
         }
 
         void initializeConverter() {
@@ -342,11 +371,7 @@ namespace LIRS {
                                                     encoderPixFormat, SWS_BICUBIC, nullptr, nullptr, nullptr);
         };
 
-        // public API
-    public:
-
-        std::function<void(uint8_t *)> callback;
-
+        std::function<void()> onFrameCallback;
     };
 }
 

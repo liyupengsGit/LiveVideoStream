@@ -15,7 +15,7 @@ namespace LIRS {
     class H264FramedSource : public FramedSource {
     public:
 
-        static H264FramedSource* createNew(UsageEnvironment& env, std::shared_ptr<Transcoder> transcoder) {
+        static H264FramedSource* createNew(UsageEnvironment& env, Transcoder *transcoder) {
             return new H264FramedSource(env, transcoder);
         }
 
@@ -27,7 +27,7 @@ namespace LIRS {
 
     protected:
 
-        H264FramedSource(UsageEnvironment &env, std::shared_ptr<Transcoder> &transcoder) :
+        H264FramedSource(UsageEnvironment &env, Transcoder *transcoder) :
                 FramedSource(env), transcoder(transcoder) {
 
             eventTriggerId = envir().taskScheduler().createEventTrigger(deliverFrame0);
@@ -35,7 +35,7 @@ namespace LIRS {
         }
 
     private:
-        std::shared_ptr<Transcoder> transcoder;
+        Transcoder *transcoder;
         EventTriggerId eventTriggerId;
 
         void doGetNextFrame() override {
@@ -43,12 +43,15 @@ namespace LIRS {
         }
 
         static void deliverFrame0(void* p) {
-            ((H264FramedSource*)p)->deliverFrame();
+            ((H264FramedSource*)p)->doGetNextFrame();
         }
 
         void deliverFrame() {
 
-            if (!isCurrentlyAwaitingData()) return;
+            if (!isCurrentlyAwaitingData()) {
+//                envir() << "No data...\n";
+                return;
+            }
 
             std::vector<uint8_t> frame;
             auto status = transcoder->retrieveFrame(frame);
@@ -63,13 +66,11 @@ namespace LIRS {
                 }
 
                 gettimeofday(&fPresentationTime, nullptr);
-                memmove(fTo, frame.data(), frame.size()); // DO NOT CHANGE fTo address, ALWAYS COPY
+                memcpy(fTo, frame.data(), fFrameSize); // DO NOT CHANGE ADDRESS, ONLY COPY
                 FramedSource::afterGetting(this);
 
             } else {
                 fFrameSize = 0;
-                fTo = nullptr;
-                handleClosure(this);
             }
         }
 

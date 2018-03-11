@@ -100,13 +100,13 @@ namespace LIRS {
                             av_packet_rescale_ts(packet, decoderContext.videoStream->time_base,
                                                  encoderContext.videoStream->time_base);
 
-                            // put data into queue
                             outQueueMutex.lock();
-                            // fixme: copy???
-                            outQueue.push(std::vector<uint8_t>(packet->data, packet->data + packet->size));
+                            // Note: copying
+                            outQueue.push(std::vector<uint8_t>(packet->data + 4, packet->data + packet->size));
                             outQueueMutex.unlock();
 
                             if (onFrameCallback) {
+                                // calling onFrame callback
                                 onFrameCallback();
                             }
                         }
@@ -124,7 +124,6 @@ namespace LIRS {
                 outQueueMutex.unlock();
                 return true;
             }
-
             return false;
         }
 

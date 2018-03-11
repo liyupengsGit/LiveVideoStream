@@ -5,9 +5,7 @@
 #include <BasicUsageEnvironment.hh>
 #include <GroupsockHelper.hh>
 #include <liveMedia.hh>
-#include <utility>
 #include "H264FramedSource.hpp"
-#include "Transcoder.hpp"
 
 namespace LIRS {
 
@@ -15,9 +13,9 @@ namespace LIRS {
 
     public:
 
-        explicit LiveRTSPServer(std::shared_ptr<Transcoder> src, int port = 8554, int httpPort = -1) :
-                rtspPort(port), httpTunnelingPort(httpPort), videoSink(nullptr),
-                videoSource(nullptr), source(std::move(src)), quit(0) {}
+        explicit LiveRTSPServer(Transcoder *transcoder0, int port = 8554, int httpPort = -1) :
+                rtspPort(port), httpTunnelingPort(httpPort), videoSink0(nullptr),
+                videoSourceES0(nullptr), transcoder0(transcoder0), quit(0) {}
 
         ~LiveRTSPServer() {
             LOG(INFO) << "RTSP server destructor";
@@ -45,42 +43,43 @@ namespace LIRS {
             rtcpGroupSock.multicastSendOnly();
 
             // Create a 'H264 Video RTP' sink from the RTP 'groupscok'
-            OutPacketBuffer::maxSize = 2000000;
-            videoSink = H264VideoRTPSink::createNew(*env, &rtpGroupSock, 96);
+            OutPacketBuffer::maxSize = 500000;
+            videoSink0 = H264VideoRTPSink::createNew(*env, &rtpGroupSock, 96);
 
             auto estimatedSessionBandwidth = 1024U; // in kbps
-            auto maxCNAMElen = 100U;
-            unsigned char CNAME[maxCNAMElen + 1];
-            gethostname(reinterpret_cast<char *>(CNAME), maxCNAMElen);
-            CNAME[maxCNAMElen] = '\0';
+            auto urlMaxLength = 100U;
+            unsigned char URL[urlMaxLength + 1];
+            gethostname(reinterpret_cast<char *>(URL), urlMaxLength);
+            URL[urlMaxLength] = '\0';
 
-            auto rtcp = RTCPInstance::createNew(*env, &rtcpGroupSock, estimatedSessionBandwidth, CNAME, videoSink,
+            auto rtcp0 = RTCPInstance::createNew(*env, &rtcpGroupSock, estimatedSessionBandwidth, URL, videoSink0,
                                                 nullptr, True); // starts automatically
 
             auto rtspServer = RTSPServer::createNew(*env, rtspPort);
 
             if (!rtspServer) {
                 *env << "Failed to create RTSP server: " << env->getResultMsg() << "\n";
-                exit(1); // todo exit properly
+                return; // todo exit properly
             } else {
-                std::string desc = "LIRS Streaming Session (camera)";
 
-                auto sms = ServerMediaSession::createNew(*env, "camera", "UVC camera #0", desc.data(), True);
-
-                sms->addSubsession(PassiveServerMediaSubsession::createNew(*videoSink, rtcp));
+                auto sms = ServerMediaSession::createNew(*env, "cam0", "UVC device",
+                                                         "LIRS Video Streaming Session (camera#0)", True);
+                sms->addSubsession(PassiveServerMediaSubsession::createNew(*videoSink0, rtcp0));
                 rtspServer->addServerMediaSession(sms);
 
                 auto url = rtspServer->rtspURL(sms);
-                *env << "Play this stream using the URL \"" << url << "\"\n";
+                *env << "Play camera#0 stream using the URL \"" << url << "\"\n";
                 delete (url);
-                *env << "Start streaming ...\n";
 
-                auto cameraSource = H264FramedSource::createNew(*env, source);
+                auto camera0Source = H264FramedSource::createNew(*env, transcoder0); // first camera
 
-                videoSource = H264VideoStreamFramer::createNew(*env, cameraSource);
+                // discrete framer is more optimized than framer
+                videoSourceES0 = H264VideoStreamDiscreteFramer::createNew(*env, camera0Source);
 
                 // start playing
-                videoSink->startPlaying(*videoSource, nullptr, videoSink);
+                videoSink0->startPlaying(*videoSourceES0, nullptr, videoSink0);
+
+                *env << "Start streaming ...\n";
 
                 env->taskScheduler().doEventLoop(&quit);
             }
@@ -92,9 +91,9 @@ namespace LIRS {
         int rtspPort;
         int httpTunnelingPort;
 
-        RTPSink *videoSink;
-        FramedSource *videoSource;
-        std::shared_ptr<Transcoder> source;
+        RTPSink *videoSink0;
+        FramedSource *videoSourceES0;
+        Transcoder* transcoder0;
 
         char quit;
     };

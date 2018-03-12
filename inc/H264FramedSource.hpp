@@ -1,15 +1,14 @@
 #ifndef LIVE_VIDEO_STREAM_H264_FRAMED_SOURCE_HPP
 #define LIVE_VIDEO_STREAM_H264_FRAMED_SOURCE_HPP
 
-#include <functional>
 #include <FramedSource.hh>
 #include <UsageEnvironment.hh>
 #include <Groupsock.hh>
 #include <Transcoder.hpp>
-#include <utility>
-#include "Logger.hpp"
 
-// TODO fix shared_ptr usage
+#include "Logger.hpp"
+#include <functional>
+
 namespace LIRS {
 
     class H264FramedSource : public FramedSource {
@@ -22,7 +21,7 @@ namespace LIRS {
         ~H264FramedSource() override {
             envir().taskScheduler().deleteEventTrigger(eventTriggerId);
             eventTriggerId = 0;
-            LOG(INFO) << "FramedSource destructor";
+            LOG(DEBUG) << "FramedSource has been destructed";
         }
 
     protected:
@@ -30,20 +29,19 @@ namespace LIRS {
         H264FramedSource(UsageEnvironment &env, Transcoder *transcoder) :
                 FramedSource(env), transcoder(transcoder) {
 
+            // call the specified function on event
             eventTriggerId = envir().taskScheduler().createEventTrigger(deliverFrame0);
+
             transcoder->setOnFrameCallback(std::bind(&H264FramedSource::onFrame, this));
         }
 
     private:
+
         Transcoder *transcoder;
         EventTriggerId eventTriggerId;
 
         void doGetNextFrame() override {
             deliverFrame();
-        }
-
-        static void deliverFrame0(void* p) {
-            ((H264FramedSource*)p)->doGetNextFrame();
         }
 
         void deliverFrame() {
@@ -65,12 +63,16 @@ namespace LIRS {
                 }
 
                 gettimeofday(&fPresentationTime, nullptr);
-                memcpy(fTo, frame.data(), fFrameSize); // DO NOT CHANGE ADDRESS, ONLY COPY
+                memmove(fTo, frame.data(), fFrameSize); // DO NOT CHANGE ADDRESS, ONLY COPY
                 FramedSource::afterGetting(this);
 
             } else {
                 fFrameSize = 0;
             }
+        }
+
+        static void deliverFrame0(void* p) {
+            ((H264FramedSource*)p)->deliverFrame();
         }
 
         void doStopGettingFrames() override {
@@ -81,7 +83,6 @@ namespace LIRS {
             envir().taskScheduler().triggerEvent(eventTriggerId, this);
         }
     };
-
 
 }
 

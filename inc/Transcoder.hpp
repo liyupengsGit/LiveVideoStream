@@ -2,9 +2,7 @@
 #define LIVE_VIDEO_STREAM_TRANSCODER_HPP
 
 #include <string>
-#include <chrono>
 #include <thread>
-#include <utility>
 #include <mutex>
 #include <queue>
 
@@ -28,7 +26,6 @@ namespace LIRS {
 
     public:
 
-        // fixme: decouple from AV frame rate and pixel format (pixdesc utils)
         static Transcoder *newInstance(std::string sourceUrl, size_t frameWidth, size_t frameHeight,
                                        std::string rawPixelFormatStr, std::string encoderPixelFormatStr,
                                        size_t frameRate, size_t outputFrameRate, size_t outputBitRate) {
@@ -37,12 +34,10 @@ namespace LIRS {
                                   frameRate, outputFrameRate, outputBitRate);
         }
 
-        /* prohibit copying */
         Transcoder(const Transcoder &) = delete;
 
         Transcoder &operator=(const Transcoder &) = delete;
 
-        // destructor
         ~Transcoder() {
 
             avio_close(encoderContext.formatContext->pb);
@@ -63,7 +58,6 @@ namespace LIRS {
             decoderContext = {};
             encoderContext = {};
 
-
             videoSourceUrl.clear();
             frameWidth = 0;
             frameHeight = 0;
@@ -79,6 +73,8 @@ namespace LIRS {
 
         // decoder/encoder loop
         void playVideo() {
+
+            LOG(INFO) << "Starting playing video from camera...";
 
             while (av_read_frame(decoderContext.formatContext, packet) == 0) {
 
@@ -96,16 +92,16 @@ namespace LIRS {
 
                         if (encode(encoderContext.codecContext, convertedFrame, packet) >= 0) {
 
+                            // fixme: don't needed?
                             av_packet_rescale_ts(packet, decoderContext.videoStream->time_base,
                                                  encoderContext.videoStream->time_base);
 
                             outQueueMutex.lock();
-                            // Note: copying
+                            // fixme: copy
                             outQueue.push(std::vector<uint8_t>(packet->data + 4, packet->data + packet->size));
                             outQueueMutex.unlock();
 
                             if (onFrameCallback) {
-                                // calling onFrame callback
                                 onFrameCallback();
                             }
                         }
@@ -116,6 +112,7 @@ namespace LIRS {
         }
 
         bool retrieveFrame(std::vector<uint8_t> &frame) {
+
             if (!outQueue.empty()) {
                 outQueueMutex.lock();
                 frame = outQueue.front();
@@ -123,6 +120,7 @@ namespace LIRS {
                 outQueueMutex.unlock();
                 return true;
             }
+
             return false;
         }
 
@@ -130,6 +128,12 @@ namespace LIRS {
             onFrameCallback = std::move(callback);
         }
 
+        bool haveAvailableFrames() {
+            outQueueMutex.lock();
+            auto res =  !outQueue.empty();
+            outQueueMutex.unlock();
+            return res;
+        }
 
     private:
 
@@ -142,10 +146,14 @@ namespace LIRS {
                   rawFrame(nullptr), convertedFrame(nullptr), packet(nullptr),
                   converterContext(nullptr) {
 
+            LOG(INFO) << "Constructing transcoder for \"" << videoSourceUrl << "\"";
+
             this->rawPixFormat = av_get_pix_fmt(rawPixFmtStr.c_str());
             this->encoderPixFormat = av_get_pix_fmt(encPixFmtStr.c_str());
 
             assert(rawPixFormat != AV_PIX_FMT_NONE && encoderPixFormat != AV_PIX_FMT_NONE);
+
+            LOG(INFO) << "Decoder/encoder pixel formats: " << rawPixFmtStr << " and " << encPixFmtStr;
 
             registerAll();
 
@@ -197,9 +205,12 @@ namespace LIRS {
         /* Methods */
 
         void registerAll() {
+
+            LOG(DEBUG) << "Registering AV components";
             av_register_all();
             avdevice_register_all();
             avcodec_register_all();
+
         }
 
         void initializeDecoder() {
@@ -215,8 +226,8 @@ namespace LIRS {
             av_dict_set(&options, "pixel_format", av_get_pix_fmt_name(rawPixFormat), 0);
             av_dict_set_int(&options, "framerate", frameRate, 0);
 
-            int statCode = avformat_open_input(&decoderContext.formatContext, videoSourceUrl.data(), inputFormat,
-                                               &options);
+            int statCode = avformat_open_input(&decoderContext.formatContext, videoSourceUrl.data(),
+                                               inputFormat, &options);
             av_dict_free(&options);
             assert(statCode == 0);
 
@@ -242,26 +253,28 @@ namespace LIRS {
             statCode = avcodec_open2(decoderContext.codecContext, decoderContext.codec, &options);
             assert(statCode == 0);
 
-            // save info (in case of change)
+            // save info
             frameRate = static_cast<size_t>(decoderContext.videoStream->r_frame_rate.num /
                                             decoderContext.videoStream->r_frame_rate.den);
             frameWidth = static_cast<size_t>(decoderContext.codecContext->width);
             frameHeight = static_cast<size_t>(decoderContext.codecContext->height);
             rawPixFormat = decoderContext.codecContext->pix_fmt;
             sourceBitRate = static_cast<size_t>(decoderContext.codecContext->bit_rate);
+
+            LOG(INFO) << "Decoder for \"" << videoSourceUrl << "\" has been created (fps: "
+                      << frameRate << ", width x height: " << frameWidth << "x" << frameHeight << ")";
         }
 
         void initializeEncoder() {
 
-            // allocate format context for an output format (no output file)
+            // allocate format context for an output format (null - no output file)
             auto statCode = avformat_alloc_output_context2(&encoderContext.formatContext, nullptr, "null", nullptr);
             assert(statCode >= 0);
 
-            encoderContext.codec = avcodec_find_encoder_by_name("libx264"); // fixme: hardcoded
+            encoderContext.codec = avcodec_find_encoder_by_name("libx264");
             assert(encoderContext.codec);
 
             // create new video output stream
-
             encoderContext.videoStream = avformat_new_stream(encoderContext.formatContext, encoderContext.codec);
             assert(encoderContext.videoStream);
             encoderContext.videoStream->id = encoderContext.formatContext->nb_streams - 1;
@@ -278,20 +291,14 @@ namespace LIRS {
             encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(frameRate), 1};
             encoderContext.codecContext->pix_fmt = encoderPixFormat;
 
-            /*
-            if (encoderContext.formatContext->oformat->flags & AVFMT_GLOBALHEADER) {
-                encoderContext.codecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-            }
-            */
-
             avcodec_parameters_from_context(encoderContext.videoStream->codecpar, encoderContext.codecContext);
             encoderContext.videoStream->r_frame_rate = (AVRational) {static_cast<int>(outputFrameRate), 1};
             encoderContext.videoStream->avg_frame_rate = (AVRational) {static_cast<int>(outputFrameRate), 1};
 
             AVDictionary *options = nullptr;
-            av_dict_set(&options, "preset", "fast", 0);
+            av_dict_set(&options, "preset", "veryfast", 0);
             av_dict_set(&options, "tune", "zerolatency", 0);
-            av_dict_set_int(&options, "b", outputBitRate, 0); // bitrate
+            av_dict_set_int(&options, "b", outputBitRate, 0);
 
             // open the output format to use given codec
             statCode = avcodec_open2(encoderContext.codecContext, encoderContext.codec, &options);
@@ -302,6 +309,9 @@ namespace LIRS {
             assert(statCode >= 0);
 
             av_dump_format(encoderContext.formatContext, encoderContext.videoStream->index, "null", 1);
+
+            LOG(INFO) << "Encoder for \"" << videoSourceUrl << "\" " << "has been created (preset: veryfast, "
+                      << "tune: zerolatency, bitrate: " << outputBitRate << ")";
         }
 
         int decode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
@@ -371,6 +381,9 @@ namespace LIRS {
                                                     static_cast<int>(frameHeight), rawPixFormat,
                                                     static_cast<int>(frameWidth), static_cast<int>(frameHeight),
                                                     encoderPixFormat, SWS_BICUBIC, nullptr, nullptr, nullptr);
+
+            LOG(INFO) << "Pixel format converter for \"" << videoSourceUrl << "\" has been created ("
+                      << av_get_pix_fmt_name(rawPixFormat) << " -> " << av_get_pix_fmt_name(encoderPixFormat) << ")";
         };
 
         std::function<void()> onFrameCallback;

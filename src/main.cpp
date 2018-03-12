@@ -10,16 +10,19 @@ int main(int argc, char **argv) {
     av_log_set_level(AV_LOG_INFO);
 
     auto cam0Transcoder = LIRS::Transcoder::newInstance("/dev/video0", 640, 480, "yuyv422", "yuv422p", 15, 15, 500000);
-    std::shared_ptr<LIRS::Transcoder> transcoderPtr(cam0Transcoder);
 
     // run in a separate thread
     std::thread([cam0Transcoder]() {
         cam0Transcoder->playVideo();
     }).detach();
 
-    // server (in main thread)
+    // run server in the main thread on port 8554
     auto server = new LIRS::LiveRTSPServer(cam0Transcoder, 8554);
     server->run();
+
+    // cleanup
+    delete(cam0Transcoder);
+    delete(server);
 
     return 0;
 }

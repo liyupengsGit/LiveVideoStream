@@ -9,8 +9,8 @@ set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules)
 
 find_package(OpenCV 3 REQUIRED)
 find_package(FFmpeg REQUIRED)
-find_package(Threads REQUIRED)
 find_package(Live555 REQUIRED)
+find_package(Boost REQUIRED)
 
 # executables
 include_directories("inc")
@@ -18,7 +18,7 @@ add_executable(${PROJECT_NAME} ${SOURCE_FILES}
         src/main.cpp src/Utils.cpp)
 
 # pthread
-target_link_libraries (${PROJECT_NAME} ${CMAKE_THREAD_LIBS_INIT})
+#target_link_libraries (${PROJECT_NAME} ${CMAKE_THREAD_LIBS_INIT})
 
 # Opencv
 include_directories(${OpenCV_INCLUDE_DIRS})

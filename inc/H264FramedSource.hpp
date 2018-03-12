@@ -49,7 +49,6 @@ namespace LIRS {
         void deliverFrame() {
 
             if (!isCurrentlyAwaitingData()) {
-//                envir() << "No data...\n";
                 return;
             }
 

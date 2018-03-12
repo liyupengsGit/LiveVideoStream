@@ -13,7 +13,7 @@ namespace LIRS {
 
     public:
 
-        explicit LiveRTSPServer(Transcoder *transcoder0, int port = 8554, int httpPort = -1) :
+        explicit LiveRTSPServer(Transcoder *transcoder0, uint port = 8554, int httpPort = -1) :
                 rtspPort(port), httpTunnelingPort(httpPort), videoSink0(nullptr),
                 videoSourceES0(nullptr), transcoder0(transcoder0), quit(0) {}
 
@@ -30,7 +30,7 @@ namespace LIRS {
             struct in_addr destinationAddress{};
             destinationAddress.s_addr = chooseRandomIPv4SSMAddress(*env);
 
-            auto rtpPortNumber = 18888U;
+            auto rtpPortNumber = RTP_PORT_NUMBER;
             auto rtcpPortNumber = rtpPortNumber + 1;
             auto ttl = 255U;
 
@@ -88,7 +88,7 @@ namespace LIRS {
 
     private:
 
-        int rtspPort;
+        uint rtspPort;
         int httpTunnelingPort;
 
         RTPSink *videoSink0;
@@ -96,6 +96,8 @@ namespace LIRS {
         Transcoder* transcoder0;
 
         char quit;
+
+        static const uint RTP_PORT_NUMBER = 18888;
     };
 }
 

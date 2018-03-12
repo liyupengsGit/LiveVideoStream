@@ -9,7 +9,7 @@ int main(int argc, char **argv) {
     initLogger(log4cpp::Priority::DEBUG);
     av_log_set_level(AV_LOG_INFO);
 
-    auto cam0Transcoder = LIRS::Transcoder::newInstance("/dev/video0", 640, 480, AV_PIX_FMT_YUYV422, AV_PIX_FMT_YUV422P, 15, 15, 500000);
+    auto cam0Transcoder = LIRS::Transcoder::newInstance("/dev/video0", 640, 480, "yuyv422", "yuv422p", 15, 15, 500000);
     std::shared_ptr<LIRS::Transcoder> transcoderPtr(cam0Transcoder);
 
     // run in a separate thread

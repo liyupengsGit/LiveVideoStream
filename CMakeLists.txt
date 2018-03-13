@@ -7,19 +7,13 @@ set(CMAKE_BUILD_TYPE DEBUG)
 set(CMAKE_CXX_FLAGS "-Wall -pthread")
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules)
 
-find_package(OpenCV 3 REQUIRED)
 find_package(FFmpeg REQUIRED)
 find_package(Live555 REQUIRED)
-find_package(Boost REQUIRED)
 
 # executables
 include_directories("inc")
 add_executable(${PROJECT_NAME} ${SOURCE_FILES}
         src/main.cpp src/Utils.cpp src/H264FramedSource.cpp src/Transcoder.cpp src/CustomServerMediaSubsession.cpp)
-
-# Opencv
-include_directories(${OpenCV_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS})
 
 # FFmpeg
 if (FFMPEG_FOUND)

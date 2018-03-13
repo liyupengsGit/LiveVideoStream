@@ -42,7 +42,6 @@ namespace LIRS {
 
             // H.264 video elementary stream #0
             {
-
                 auto transcoder = Transcoder::newInstance("/dev/video0", 640, 480, "yuyv422", "yuv422p", 15, 15, 500000);
                 std::thread([transcoder](){
                     transcoder->playVideo();

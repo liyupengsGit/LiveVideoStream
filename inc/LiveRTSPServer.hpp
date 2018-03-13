@@ -6,6 +6,7 @@
 #include <GroupsockHelper.hh>
 #include <liveMedia.hh>
 #include "H264FramedSource.hpp"
+#include "CustomServerMediaSubsession.hpp"
 
 namespace LIRS {
 
@@ -13,9 +14,12 @@ namespace LIRS {
 
     public:
 
-        explicit LiveRTSPServer(Transcoder *transcoder0, uint port = 8554, int httpPort = -1) :
-                rtspPort(port), httpTunnelingPort(httpPort), videoSink0(nullptr),
-                videoSourceES0(nullptr), transcoder0(transcoder0), quit(0) {}
+        explicit LiveRTSPServer(uint port = 8554, int httpPort = -1) :
+                rtspPort(port), httpTunnelingPort(httpPort), quit(0), taskScheduler(nullptr), env(nullptr) {
+
+            taskScheduler = BasicTaskScheduler::createNew();
+            env = BasicUsageEnvironment::createNew(*taskScheduler);
+        }
 
         ~LiveRTSPServer() {
             LOG(INFO) << "RTSP server destructor";
@@ -23,66 +27,72 @@ namespace LIRS {
 
         void run() {
 
-            auto taskScheduler = BasicTaskScheduler::createNew();
-            auto env = BasicUsageEnvironment::createNew(*taskScheduler);
-
-            // create 'groupsocks' for RTP and RTCP
-            struct in_addr destinationAddress{};
-            destinationAddress.s_addr = chooseRandomIPv4SSMAddress(*env);
-
-            auto rtpPortNumber = RTP_PORT_NUMBER;
-            auto rtcpPortNumber = rtpPortNumber + 1;
-            auto ttl = 255U;
-
-            const Port rtpPort(rtpPortNumber);
-            const Port rtcpPort(rtcpPortNumber);
-
-            Groupsock rtpGroupSock(*env, destinationAddress, rtpPort, ttl);
-            rtpGroupSock.multicastSendOnly(); // ssm source
-            Groupsock rtcpGroupSock(*env, destinationAddress, rtcpPort, ttl);
-            rtcpGroupSock.multicastSendOnly();
-
-            // Create a 'H264 Video RTP' sink from the RTP 'groupscok'
             OutPacketBuffer::maxSize = 500000;
-            videoSink0 = H264VideoRTPSink::createNew(*env, &rtpGroupSock, 96);
-
-            auto estimatedSessionBandwidth = 1024U; // in kbps
-            auto urlMaxLength = 100U;
-            unsigned char URL[urlMaxLength + 1];
-            gethostname(reinterpret_cast<char *>(URL), urlMaxLength);
-            URL[urlMaxLength] = '\0';
-
-            auto rtcp0 = RTCPInstance::createNew(*env, &rtcpGroupSock, estimatedSessionBandwidth, URL, videoSink0,
-                                                nullptr, True); // starts automatically
 
             auto rtspServer = RTSPServer::createNew(*env, rtspPort);
 
             if (!rtspServer) {
                 *env << "Failed to create RTSP server: " << env->getResultMsg() << "\n";
-                return; // todo exit properly
-            } else {
+                exit(1);
+            }
 
-                auto sms = ServerMediaSession::createNew(*env, "cam0", "UVC device",
-                                                         "LIRS Video Streaming Session (camera#0)", True);
-                sms->addSubsession(PassiveServerMediaSubsession::createNew(*videoSink0, rtcp0));
+            if (httpTunnelingPort != -1) {
+                rtspServer->setUpTunnelingOverHTTP(httpTunnelingPort);
+            }
+
+            // H.264 video elementary stream #0
+            {
+
+                auto transcoder = Transcoder::newInstance("/dev/video0", 640, 480, "yuyv422", "yuv422p", 15, 15, 500000);
+                std::thread([transcoder](){
+                    transcoder->playVideo();
+                }).detach();
+
+                auto source = H264FramedSource::createNew(*env, transcoder);
+                auto replicator = StreamReplicator::createNew(*env, source, False);
+
+                std::string streamName = "camera";
+                std::string description = "UVC #0 laptop camera";
+
+                auto sms = ServerMediaSession::createNew(*env, streamName.c_str(), description.c_str());
+                sms->addSubsession(CustomServerMediaSubsession::createNew(*env, replicator));
                 rtspServer->addServerMediaSession(sms);
 
                 auto url = rtspServer->rtspURL(sms);
-                *env << "Play camera#0 stream using the URL \"" << url << "\"\n";
-                delete (url);
-
-                auto camera0Source = H264FramedSource::createNew(*env, transcoder0); // first camera
-
-                // discrete framer is more optimized than framer
-                videoSourceES0 = H264VideoStreamDiscreteFramer::createNew(*env, camera0Source);
-
-                // start playing
-                videoSink0->startPlaying(*videoSourceES0, nullptr, videoSink0);
-
-                *env << "Start streaming ...\n";
-
-                env->taskScheduler().doEventLoop(&quit);
+                *env << "Play the stream #0 using URL: " << url << "\n";
+                delete [] url;
             }
+
+            // H.264 video elementary stream #1
+            {
+
+                auto transcoder = Transcoder::newInstance("/dev/video1", 640, 480, "yuyv422", "yuv422p", 15, 15, 500000);
+
+                std::thread([transcoder](){
+                    transcoder->playVideo();
+                }).detach();
+
+                auto source = H264FramedSource::createNew(*env, transcoder);
+                auto replicator = StreamReplicator::createNew(*env, source, False);
+
+                std::string streamName = "other";
+                std::string description = "UVC #1 laptop camera";
+
+                auto sms = ServerMediaSession::createNew(*env, streamName.c_str(), description.c_str());
+                sms->addSubsession(CustomServerMediaSubsession::createNew(*env, replicator));
+                rtspServer->addServerMediaSession(sms);
+
+                auto url = rtspServer->rtspURL(sms);
+                *env << "Play the stream #1 using URL: " << url << "\n";
+                delete [] url;
+            }
+
+            *env << "Playing stream ...\n";
+
+            env->taskScheduler().doEventLoop(&quit);
+
+            Medium::close(rtspServer);
+            delete taskScheduler;
         }
 
 
@@ -90,12 +100,10 @@ namespace LIRS {
 
         uint rtspPort;
         int httpTunnelingPort;
-
-        RTPSink *videoSink0;
-        FramedSource *videoSourceES0;
-        Transcoder* transcoder0;
-
         char quit;
+
+        TaskScheduler* taskScheduler;
+        UsageEnvironment* env;
 
         static const uint RTP_PORT_NUMBER = 18888;
     };

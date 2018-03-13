@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.0)
 project(LiveVideoStream)
 
 set(CMAKE_CXX_STANDARD 11)
@@ -16,9 +16,6 @@ find_package(Boost REQUIRED)
 include_directories("inc")
 add_executable(${PROJECT_NAME} ${SOURCE_FILES}
         src/main.cpp src/Utils.cpp src/H264FramedSource.cpp src/Transcoder.cpp src/CustomServerMediaSubsession.cpp)
-
-# pthread
-#target_link_libraries (${PROJECT_NAME} ${CMAKE_THREAD_LIBS_INIT})
 
 # Opencv
 include_directories(${OpenCV_INCLUDE_DIRS})

@@ -15,7 +15,7 @@ find_package(Boost REQUIRED)
 # executables
 include_directories("inc")
 add_executable(${PROJECT_NAME} ${SOURCE_FILES}
-        src/main.cpp src/Utils.cpp)
+        src/main.cpp src/Utils.cpp src/H264FramedSource.cpp)
 
 # pthread
 #target_link_libraries (${PROJECT_NAME} ${CMAKE_THREAD_LIBS_INIT})

@@ -205,7 +205,13 @@ namespace LIRS {
         // set up parameters
         encoderContext.codecContext->width = static_cast<int>(frameWidth);
         encoderContext.codecContext->height = static_cast<int>(frameHeight);
-        encoderContext.codecContext->profile = FF_PROFILE_H264_HIGH_422_INTRA;
+
+        if (encoderPixFormat == AV_PIX_FMT_YUYV422) {
+            encoderContext.codecContext->profile = FF_PROFILE_H264_HIGH_422_INTRA;
+        } else {
+            encoderContext.codecContext->profile = FF_PROFILE_H264_HIGH_10_INTRA;
+        }
+
         encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(frameRate)};
         encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(frameRate), 1};
         encoderContext.codecContext->pix_fmt = encoderPixFormat;
@@ -215,7 +221,7 @@ namespace LIRS {
         encoderContext.videoStream->avg_frame_rate = (AVRational) {static_cast<int>(outputFrameRate), 1};
 
         AVDictionary *options = nullptr;
-        av_dict_set(&options, "preset", "veryfast", 0);
+        av_dict_set(&options, "preset", "fast", 0);
         av_dict_set(&options, "tune", "zerolatency", 0);
         av_dict_set_int(&options, "b", outputBitRate, 0);
 
@@ -300,7 +306,7 @@ namespace LIRS {
         converterContext = sws_getCachedContext(nullptr, static_cast<int>(frameWidth),
                                                 static_cast<int>(frameHeight), rawPixFormat,
                                                 static_cast<int>(frameWidth), static_cast<int>(frameHeight),
-                                                encoderPixFormat, SWS_BICUBIC, nullptr, nullptr, nullptr);
+                                                encoderPixFormat, SWS_BILINEAR, nullptr, nullptr, nullptr);
 
         LOG(INFO) << "Pixel format converter for \"" << videoSourceUrl << "\" has been created ("
                   << av_get_pix_fmt_name(rawPixFormat) << " -> " << av_get_pix_fmt_name(encoderPixFormat) << ")";

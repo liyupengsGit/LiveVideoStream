@@ -5,6 +5,8 @@
 #include <thread>
 #include <mutex>
 #include <queue>
+#include <atomic>
+#include <chrono>
 
 #include "Utils.hpp"
 #include "Logger.hpp"
@@ -48,6 +50,8 @@ namespace LIRS {
 
         void playVideo();
 
+        void fetchFrames();
+
         bool retrieveFrame(std::vector<uint8_t> &frame);
 
         void setOnFrameCallback(std::function<void()> callback);
@@ -86,6 +90,13 @@ namespace LIRS {
 
         std::mutex outQueueMutex;
         std::queue<std::vector<uint8_t>> outQueue;
+
+        std::mutex fetchLastFrameMutex;
+        std::atomic_bool isPlayingFlag;
+
+        /** constants **/
+        const static unsigned int H264_START_CODE_BYTES_NUMBER = 4;
+
 
         /* Methods */
 

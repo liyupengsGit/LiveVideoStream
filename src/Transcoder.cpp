@@ -46,42 +46,79 @@ namespace LIRS {
 
     void Transcoder::playVideo() {
 
-        LOG(INFO) << "Starting playing video from camera...";
+        isPlayingFlag.store(true);
 
         while (av_read_frame(decoderContext.formatContext, packet) == 0) {
 
             if (packet->stream_index == decoderContext.videoStream->index) {
 
-                if (decode(decoderContext.codecContext, rawFrame, packet) >= 0) {
+                fetchLastFrameMutex.lock();
 
-                    av_frame_make_writable(convertedFrame);
+                decode(decoderContext.codecContext, rawFrame, packet);
 
-                    sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(rawFrame->data),
-                              rawFrame->linesize, 0, static_cast<int>(frameHeight), convertedFrame->data,
-                              convertedFrame->linesize);
-
-                    av_frame_copy_props(convertedFrame, rawFrame);
-
-                    if (encode(encoderContext.codecContext, convertedFrame, packet) >= 0) {
-
-                        // fixme: don't needed?
-                        av_packet_rescale_ts(packet, decoderContext.videoStream->time_base,
-                                             encoderContext.videoStream->time_base);
-
-                        outQueueMutex.lock();
-                        // fixme: copy
-                        outQueue.push(std::vector<uint8_t>(packet->data + 4, packet->data + packet->size));
-                        outQueueMutex.unlock();
-
-                        if (onFrameCallback) {
-                            onFrameCallback();
-                        }
-                    }
-                }
+                fetchLastFrameMutex.unlock();
             }
+
             av_packet_unref(packet);
         }
+
+        isPlayingFlag.store(false);
     }
+
+
+    void Transcoder::fetchFrames() {
+
+        const auto outFrameRateMs = 1000 / outputFrameRate;
+
+        LOG(WARN) << "Out FPS: " << outFrameRateMs;
+
+        while (isPlayingFlag.load()) { // todo true
+
+            av_frame_make_writable(convertedFrame);
+
+            auto timeNow = std::chrono::high_resolution_clock::now();
+
+            fetchLastFrameMutex.lock();
+
+            sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(rawFrame->data),
+                      rawFrame->linesize, 0, static_cast<int>(frameHeight), convertedFrame->data,
+                      convertedFrame->linesize);
+
+            av_frame_copy_props(convertedFrame, rawFrame);
+
+            fetchLastFrameMutex.unlock();
+
+            if (encode(encoderContext.codecContext, convertedFrame, packet) >= 0) {
+
+                /*
+                av_packet_rescale_ts(packet, decoderContext.videoStream->time_base,
+                                     encoderContext.videoStream->time_base);
+                */
+
+                outQueueMutex.lock();
+
+                outQueue.push(std::vector<uint8_t>(packet->data + H264_START_CODE_BYTES_NUMBER, packet->data + packet->size));
+
+                outQueueMutex.unlock();
+
+                if (onFrameCallback) {
+                    onFrameCallback();
+                }
+            }
+
+            auto timeLast = std::chrono::high_resolution_clock::now();
+
+            std::chrono::duration<double, std::milli> workTime = timeLast - timeNow;
+
+            if (workTime.count() < outFrameRateMs) {
+
+                std::chrono::duration<double, std::milli> delta_ms (outFrameRateMs - workTime.count());
+                auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(delta_ms);
+                std::this_thread::sleep_for(std::chrono::milliseconds(delta.count()));
+            }
+        }
+    }
+
 
     bool Transcoder::retrieveFrame(std::vector<uint8_t> &frame) {
         if (!outQueue.empty()) {
@@ -101,7 +138,7 @@ namespace LIRS {
               sourceBitRate(0), outputBitRate(outBitRate),
               decoderContext({}), encoderContext({}),
               rawFrame(nullptr), convertedFrame(nullptr), packet(nullptr),
-              converterContext(nullptr) {
+              converterContext(nullptr), isPlayingFlag(false) {
 
         LOG(INFO) << "Constructing transcoder for \"" << videoSourceUrl << "\"";
 
@@ -212,8 +249,8 @@ namespace LIRS {
             encoderContext.codecContext->profile = FF_PROFILE_H264_HIGH_10_INTRA;
         }
 
-        encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(frameRate)};
-        encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(frameRate), 1};
+        encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(outputFrameRate)};
+        encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(outputFrameRate), 1};
         encoderContext.codecContext->pix_fmt = encoderPixFormat;
 
         avcodec_parameters_from_context(encoderContext.videoStream->codecpar, encoderContext.codecContext);
@@ -221,9 +258,9 @@ namespace LIRS {
         encoderContext.videoStream->avg_frame_rate = (AVRational) {static_cast<int>(outputFrameRate), 1};
 
         AVDictionary *options = nullptr;
-        av_dict_set(&options, "preset", "fast", 0);
+        av_dict_set(&options, "preset", "veryfast", 0); // slower, slow, medium, fast, faster, veryfast, superfast, ultrfast
         av_dict_set(&options, "tune", "zerolatency", 0);
-        av_dict_set_int(&options, "b", outputBitRate, 0);
+        av_dict_set_int(&options, "crf", 21, 0); // 22 and 23 are acceptable
 
         // open the output format to use given codec
         statCode = avcodec_open2(encoderContext.codecContext, encoderContext.codec, &options);
@@ -234,10 +271,6 @@ namespace LIRS {
         assert(statCode >= 0);
 
         av_dump_format(encoderContext.formatContext, encoderContext.videoStream->index, "null", 1);
-
-        LOG(INFO) << "Encoder for \"" << videoSourceUrl << "\" " << "has been created (preset: veryfast, "
-                  << "tune: zerolatency, bitrate: " << outputBitRate << ")";
-
     }
 
     int Transcoder::decode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
@@ -316,6 +349,5 @@ namespace LIRS {
     std::string Transcoder::getDeviceName() const {
         return videoSourceUrl;
     }
-
 
 }

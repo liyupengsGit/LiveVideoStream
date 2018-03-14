@@ -24,6 +24,10 @@ namespace LIRS {
         std::thread([transcoder](){
             transcoder->playVideo();
         }).detach();
+
+        std::thread([transcoder](){
+            transcoder->fetchFrames();
+        }).detach();
     }
 
     void H264FramedSource::doGetNextFrame() {

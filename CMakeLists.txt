@@ -13,7 +13,7 @@ find_package(Live555 REQUIRED)
 # executables
 include_directories("inc")
 add_executable(${PROJECT_NAME} ${SOURCE_FILES}
-        src/main.cpp src/Utils.cpp src/H264FramedSource.cpp src/Transcoder.cpp src/CustomServerMediaSubsession.cpp)
+        src/main.cpp src/Utils.cpp src/H264FramedSource.cpp src/Transcoder.cpp src/CameraUnicastServerMediaSubsession.cpp)
 
 # FFmpeg
 if (FFMPEG_FOUND)

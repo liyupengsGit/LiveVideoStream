@@ -8,16 +8,16 @@
 
 namespace LIRS {
 
-    class CustomServerMediaSubsession : public OnDemandServerMediaSubsession {
+    class CameraUnicastServerMediaSubsession : public OnDemandServerMediaSubsession {
 
     public:
-        static CustomServerMediaSubsession* createNew(UsageEnvironment& env, StreamReplicator* replicator);
+        static CameraUnicastServerMediaSubsession* createNew(UsageEnvironment& env, StreamReplicator* replicator);
 
     protected:
 
         StreamReplicator* replicator;
 
-        CustomServerMediaSubsession(UsageEnvironment& env, StreamReplicator* replicator);
+        CameraUnicastServerMediaSubsession(UsageEnvironment& env, StreamReplicator* replicator);
 
         FramedSource *createNewStreamSource(unsigned clientSessionId, unsigned &estBitrate) override;
 

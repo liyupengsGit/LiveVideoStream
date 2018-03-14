@@ -307,5 +307,9 @@ namespace LIRS {
 
     }
 
+    std::string Transcoder::getDeviceName() const {
+        return videoSourceUrl;
+    }
+
 
 }

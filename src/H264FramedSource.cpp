@@ -20,6 +20,10 @@ namespace LIRS {
         LOG(DEBUG) << "Event trigger ID for deliverFrame0: " << eventTriggerId;
 
         transcoder->setOnFrameCallback(std::bind(&H264FramedSource::onFrame, this));
+
+        std::thread([transcoder](){
+            transcoder->playVideo();
+        }).detach();
     }
 
     void H264FramedSource::doGetNextFrame() {

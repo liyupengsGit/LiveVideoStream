@@ -52,6 +52,8 @@ namespace LIRS {
 
         void setOnFrameCallback(std::function<void()> callback);
 
+        std::string getDeviceName() const;
+
     private:
 
         Transcoder(std::string url, size_t w, size_t h, std::string rawPixFmtStr, std::string encPixFmtStr,

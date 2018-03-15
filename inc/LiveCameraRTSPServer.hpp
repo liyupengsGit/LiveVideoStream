@@ -96,7 +96,7 @@ namespace LIRS {
 
         static const unsigned int DEFAULT_RTSP_PORT_NUMBER = 8554;
 
-        static const unsigned int OUT_PACKET_BUFFER_MAX_SIZE = 40 * 1000;
+        static const unsigned int OUT_PACKET_BUFFER_MAX_SIZE = 100 * 1000;
 
     private:
 

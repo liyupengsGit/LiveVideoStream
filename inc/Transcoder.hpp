@@ -117,15 +117,15 @@ namespace LIRS {
         void fetchFrames();
 
         /**
-         * Retrieves frame from the internal buffer.
+         * Retrieves encoded data from the internal buffer.
          *
          * @param frame - reference to video data to be filled.
          * @return true - if there is some data in the buffer, otherwise - false.
          */
-        bool retrieveFrame(std::vector<uint8_t> &frame);
+        bool retrieveEncodedData(std::vector<uint8_t> &frame);
 
         /**
-         * Sets callback function which indicates that a new encoded video frame is available.
+         * Sets callback function which indicates that a new encoded video data is available.
          *
          * @param callback - callback function to be set to.
          */
@@ -137,6 +137,8 @@ namespace LIRS {
          * @return device url/path.
          */
         std::string getDeviceName() const;
+
+        std::string getAlias() const;
 
     private:
 
@@ -250,13 +252,13 @@ namespace LIRS {
         SwsContext *converterContext;
 
         /**
-         * Mutex used to give concurrent access to the queue holding arriving encoded frames from the encoder.
+         * Mutex used to give concurrent access to the queue holding arriving encoded data from the encoder.
          */
         std::mutex outQueueMutex;
 
         /**
          * Queue used to hold encoded data from the encoder.
-         * Encoded frames are retrieved from this queue by the consumer.s
+         * Encoded data is retrieved from this queue by the consumer.
          */
         std::queue<std::vector<uint8_t>> outQueue;
 

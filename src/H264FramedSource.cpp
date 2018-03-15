@@ -41,7 +41,7 @@ namespace LIRS {
         }
 
         std::vector<uint8_t> frame;
-        auto status = transcoder->retrieveFrame(frame);
+        auto status = transcoder->retrieveEncodedData(frame);
 
         if (status) {
 

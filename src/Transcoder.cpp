@@ -60,7 +60,7 @@ namespace LIRS {
         LOG(INFO) << "Transcoder has been destructed";
     }
 
-    void Transcoder::playVideo() {
+    void Transcoder::runDecoder() {
 
         // set the playing flag
         isPlayingFlag.store(true);
@@ -88,7 +88,7 @@ namespace LIRS {
         isPlayingFlag.store(false);
     }
 
-    void Transcoder::fetchFrames() {
+    void Transcoder::runEncoder() {
 
         // calculate the desired framerate's duration between frames in milliseconds
         const size_t outFrameRateMs = 1000 / outputFrameRate;
@@ -133,8 +133,8 @@ namespace LIRS {
                 outQueueMutex.unlock();
 
                 // invoke the callback indicating that a new encoded data is available
-                if (onFrameCallback) {
-                    onFrameCallback();
+                if (onEncodedDataCallback) {
+                    onEncodedDataCallback();
                 }
             }
 
@@ -210,8 +210,8 @@ namespace LIRS {
         initializeConverter();
     }
 
-    void Transcoder::setOnFrameCallback(std::function<void()> callback) {
-        onFrameCallback = std::move(callback);
+    void Transcoder::setOnEncodedDataCallback(std::function<void()> callback) {
+        onEncodedDataCallback = std::move(callback);
     }
 
     void Transcoder::registerAll() {

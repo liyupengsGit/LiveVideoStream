@@ -105,7 +105,7 @@ namespace LIRS {
          * Decodes video data from video device.
          * The device's supported framerate is used.
          */
-        void playVideo();
+        void runDecoder();
 
         /**
          * Encodes captured video data.
@@ -114,7 +114,7 @@ namespace LIRS {
          * that new encoded video data is arrived, e.g. for server.
          * The data is stored in the internal buffer.
          */
-        void fetchFrames();
+        void runEncoder();
 
         /**
          * Retrieves encoded data from the internal buffer.
@@ -129,7 +129,7 @@ namespace LIRS {
          *
          * @param callback - callback function to be set to.
          */
-        void setOnFrameCallback(std::function<void()> callback);
+        void setOnEncodedDataCallback(std::function<void()> callback);
 
         /**
          * Returns device url/path, e.g. /dev/video0.
@@ -330,7 +330,7 @@ namespace LIRS {
         /**
          * Callback function called when new encoded video data is available.
          */
-        std::function<void()> onFrameCallback;
+        std::function<void()> onEncodedDataCallback;
     };
 }
 

@@ -38,7 +38,7 @@ namespace LIRS {
 
     public:
 
-        static Transcoder *newInstance(std::string sourceUrl, size_t frameWidth, size_t frameHeight,
+        static Transcoder *newInstance(std::string sourceUrl, std::string shortDevName, size_t frameWidth, size_t frameHeight,
                                        std::string rawPixelFormatStr, std::string encoderPixelFormatStr,
                                        size_t frameRate, size_t outputFrameRate, size_t outputBitRate);
 
@@ -60,12 +60,13 @@ namespace LIRS {
 
     private:
 
-        Transcoder(std::string url, size_t w, size_t h, std::string rawPixFmtStr, std::string encPixFmtStr,
+        Transcoder(std::string url, std::string shortDevName, size_t w, size_t h, std::string rawPixFmtStr, std::string encPixFmtStr,
                    size_t frameRate, size_t outFrameRate, size_t outBitRate);
 
         /* parameters */
 
         std::string videoSourceUrl;
+        std::string shortDeviceName;
 
         size_t frameWidth;
         size_t frameHeight;

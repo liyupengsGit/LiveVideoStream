@@ -25,8 +25,20 @@ namespace LIRS {
         }
 
         ~LiveCameraRTSPServer() {
-            // todo cleanup
-            LOG(INFO) << "RTSP server destructor";
+
+            allocatedTranscoders.clear();
+            allocatedVideoSources.clear();
+            watcher = 0;
+
+            LOG(INFO) << "RTSP server has been destructed";
+        }
+
+        void stopServer() {
+            watcher = 's';
+        }
+
+        void addTranscoder(Transcoder* transcoder) {
+            if (transcoder) allocatedTranscoders.push_back(transcoder);
         }
 
         void run() {
@@ -47,17 +59,21 @@ namespace LIRS {
                 }
             }
 
-            auto transcoder = Transcoder::newInstance("/dev/video0", 640, 480, "yuyv422", "yuv422p", 15, 7, 500000);
-
-            addMediaSession(transcoder, "camera", "description");
-
-//            auto transcoder2 = Transcoder::newInstance("/dev/video1", 640, 480, "yuyv422", "yuv422p", 15, 1, 500000);
-
-//            addMediaSession(transcoder2, "camera2", "description");
+            for (auto &transcoder : allocatedTranscoders) {
+                addMediaSession(transcoder, "camera" + transcoder->getDeviceName(), "description");
+            }
 
             env->taskScheduler().doEventLoop(&watcher); // do not return
 
-            delete transcoder;
+            Medium::close(server); // deletes all server media sessions
+
+            // delete all framed sources
+            for (auto &src : allocatedVideoSources) {
+                if (src) Medium::close(src);
+            }
+
+            env->reclaim();
+            delete scheduler;
         }
 
         /** Constants **/
@@ -77,6 +93,9 @@ namespace LIRS {
         UsageEnvironment* env;
         RTSPServer* server;
 
+        std::vector<Transcoder*> allocatedTranscoders;
+        std::vector<FramedSource*> allocatedVideoSources;
+
         void announceStream(ServerMediaSession* sms, const std::string &deviceName) {
             auto url = server->rtspURL(sms);
             *env << "Play the stream for camera \"" << deviceName.data() << "\" using the URL: " << url << "\n";
@@ -86,6 +105,8 @@ namespace LIRS {
         void addMediaSession(Transcoder *transcoder, const std::string &streamName, const std::string &streamDesc) {
 
             auto framedSource = H264FramedSource::createNew(*env, transcoder);
+
+            allocatedVideoSources.push_back(framedSource);
 
             auto replicator = StreamReplicator::createNew(*env, framedSource, False);
 

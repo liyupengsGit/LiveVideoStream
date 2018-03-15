@@ -9,7 +9,7 @@ namespace LIRS {
     H264FramedSource::~H264FramedSource() {
         envir().taskScheduler().deleteEventTrigger(eventTriggerId);
         eventTriggerId = 0;
-        LOG(DEBUG) << "FramedSource has been destructed";
+        LOG(DEBUG) << "H264 Camera Framed Source has been destructed";
     }
 
     H264FramedSource::H264FramedSource(UsageEnvironment &env, Transcoder *transcoder) :

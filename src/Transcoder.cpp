@@ -1,13 +1,15 @@
 #include "Transcoder.hpp"
 
+#include <utility>
+
 namespace LIRS {
 
 
-    Transcoder *Transcoder::newInstance(std::string sourceUrl, size_t frameWidth, size_t frameHeight,
+    Transcoder *Transcoder::newInstance(std::string sourceUrl, std::string shortDevName, size_t frameWidth, size_t frameHeight,
                                         std::string rawPixelFormatStr, std::string encoderPixelFormatStr,
                                         size_t frameRate, size_t outputFrameRate, size_t outputBitRate) {
 
-        return new Transcoder(sourceUrl, frameWidth, frameHeight, rawPixelFormatStr, encoderPixelFormatStr,
+        return new Transcoder(sourceUrl, shortDevName, frameWidth, frameHeight, rawPixelFormatStr, encoderPixelFormatStr,
                               frameRate, outputFrameRate, outputBitRate);
     }
 
@@ -42,7 +44,7 @@ namespace LIRS {
         sourceBitRate = 0;
         outputBitRate = 0;
 
-        LOG(INFO) << "Transcoder has been destructed.";
+        LOG(INFO) << "Transcoder has been destructed";
     }
 
     void Transcoder::playVideo() {
@@ -65,7 +67,6 @@ namespace LIRS {
 
         isPlayingFlag.store(false);
     }
-
 
     void Transcoder::fetchFrames() {
 
@@ -121,7 +122,6 @@ namespace LIRS {
         }
     }
 
-
     bool Transcoder::retrieveFrame(std::vector<uint8_t> &frame) {
         if (!outQueue.empty()) {
             outQueueMutex.lock();
@@ -133,12 +133,11 @@ namespace LIRS {
         return false;
     }
 
-    Transcoder::Transcoder(std::string url, size_t w, size_t h, std::string rawPixFmtStr, std::string encPixFmtStr,
+    Transcoder::Transcoder(std::string url, std::string shortDevName, size_t w, size_t h, std::string rawPixFmtStr, std::string encPixFmtStr,
                            size_t frameRate, size_t outFrameRate, size_t outBitRate)
-            : videoSourceUrl(std::move(url)), frameWidth(w), frameHeight(h),
-              frameRate(frameRate), outputFrameRate(outFrameRate),
-              sourceBitRate(0), outputBitRate(outBitRate),
-              decoderContext({}), encoderContext({}),
+            : videoSourceUrl(std::move(url)), shortDeviceName(std::move(shortDevName)),
+              frameWidth(w), frameHeight(h), frameRate(frameRate), outputFrameRate(outFrameRate),
+              sourceBitRate(0), outputBitRate(outBitRate), decoderContext({}), encoderContext({}),
               rawFrame(nullptr), convertedFrame(nullptr), decodingPacket(nullptr), encodingPacket(nullptr),
               converterContext(nullptr), isPlayingFlag(false) {
 

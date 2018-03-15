@@ -47,9 +47,13 @@ namespace LIRS {
                 }
             }
 
-            auto transcoder = Transcoder::newInstance("/dev/video0", 640, 480, "yuyv422", "yuv422p", 15, 15, 500000);
+            auto transcoder = Transcoder::newInstance("/dev/video0", 640, 480, "yuyv422", "yuv422p", 15, 4, 500000);
 
             addMediaSession(transcoder, "camera", "description");
+
+            auto transcoder2 = Transcoder::newInstance("/dev/video1", 640, 480, "yuyv422", "yuv422p", 15, 4, 500000);
+
+            addMediaSession(transcoder2, "camera2", "description");
 
             env->taskScheduler().doEventLoop(&watcher); // do not return
 

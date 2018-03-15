@@ -13,7 +13,7 @@ namespace LIRS {
     class H264FramedSource : public FramedSource {
     public:
 
-        static H264FramedSource* createNew(UsageEnvironment& env, Transcoder *transcoder);
+        static H264FramedSource *createNew(UsageEnvironment &env, Transcoder *transcoder);
 
     protected:
 
@@ -56,7 +56,7 @@ namespace LIRS {
          */
         void onEnCodedData();
 
-        static void deliverFrame0(void* p);
+        static void deliverFrame0(void *p);
     };
 
 }

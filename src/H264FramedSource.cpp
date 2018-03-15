@@ -28,11 +28,11 @@ namespace LIRS {
 
         // start video data encoding and decoding threads
 
-        std::thread([transcoder](){
+        std::thread([transcoder]() {
             transcoder->runDecoder();
         }).detach();
 
-        std::thread([transcoder](){
+        std::thread([transcoder]() {
             transcoder->runEncoder();
         }).detach();
     }
@@ -78,7 +78,7 @@ namespace LIRS {
     }
 
     void H264FramedSource::deliverFrame0(void *p) {
-        ((H264FramedSource*)p)->deliverFrame();
+        ((H264FramedSource *) p)->deliverFrame();
     }
 
 }

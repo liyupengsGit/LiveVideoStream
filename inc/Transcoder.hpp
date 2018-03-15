@@ -84,7 +84,8 @@ namespace LIRS {
 
         AVFrame *rawFrame;
         AVFrame *convertedFrame;
-        AVPacket *packet;
+        AVPacket *decodingPacket;
+        AVPacket *encodingPacket;
 
         SwsContext *converterContext;
 

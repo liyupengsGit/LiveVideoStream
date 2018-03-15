@@ -16,7 +16,8 @@ namespace LIRS {
         avio_close(encoderContext.formatContext->pb);
 
         sws_freeContext(converterContext);
-        av_packet_free(&packet);
+        av_packet_free(&decodingPacket);
+        av_packet_free(&encodingPacket);
         av_frame_free(&rawFrame);
         av_frame_free(&convertedFrame);
 
@@ -48,18 +49,18 @@ namespace LIRS {
 
         isPlayingFlag.store(true);
 
-        while (av_read_frame(decoderContext.formatContext, packet) == 0) {
+        while (av_read_frame(decoderContext.formatContext, decodingPacket) == 0) {
 
-            if (packet->stream_index == decoderContext.videoStream->index) {
+            if (decodingPacket->stream_index == decoderContext.videoStream->index) {
 
                 fetchLastFrameMutex.lock();
 
-                decode(decoderContext.codecContext, rawFrame, packet);
+                decode(decoderContext.codecContext, rawFrame, decodingPacket);
 
                 fetchLastFrameMutex.unlock();
             }
 
-            av_packet_unref(packet);
+            av_packet_unref(decodingPacket);
         }
 
         isPlayingFlag.store(false);
@@ -68,13 +69,13 @@ namespace LIRS {
 
     void Transcoder::fetchFrames() {
 
-        const auto outFrameRateMs = 1000 / outputFrameRate;
+        const size_t outFrameRateMs = 1000 / outputFrameRate;
 
         while (isPlayingFlag.load()) {
 
-            av_frame_make_writable(convertedFrame);
-
             auto timeNow = std::chrono::high_resolution_clock::now();
+
+            av_frame_make_writable(convertedFrame);
 
             fetchLastFrameMutex.lock();
 
@@ -86,16 +87,17 @@ namespace LIRS {
 
             fetchLastFrameMutex.unlock();
 
-            if (encode(encoderContext.codecContext, convertedFrame, packet) >= 0) {
+            if (encode(encoderContext.codecContext, convertedFrame, encodingPacket) >= 0) {
 
                 /*
-                av_packet_rescale_ts(packet, decoderContext.videoStream->time_base,
+                av_packet_rescale_ts(encodingPacket, decoderContext.videoStream->time_base,
                                      encoderContext.videoStream->time_base);
                 */
 
                 outQueueMutex.lock();
 
-                outQueue.push(std::vector<uint8_t>(packet->data + H264_START_CODE_BYTES_NUMBER, packet->data + packet->size));
+                outQueue.push(std::vector<uint8_t>(encodingPacket->data + H264_START_CODE_BYTES_NUMBER,
+                                                   encodingPacket->data + encodingPacket->size));
 
                 outQueueMutex.unlock();
 
@@ -103,6 +105,8 @@ namespace LIRS {
                     onFrameCallback();
                 }
             }
+
+            av_packet_unref(encodingPacket);
 
             auto timeLast = std::chrono::high_resolution_clock::now();
 
@@ -135,7 +139,7 @@ namespace LIRS {
               frameRate(frameRate), outputFrameRate(outFrameRate),
               sourceBitRate(0), outputBitRate(outBitRate),
               decoderContext({}), encoderContext({}),
-              rawFrame(nullptr), convertedFrame(nullptr), packet(nullptr),
+              rawFrame(nullptr), convertedFrame(nullptr), decodingPacket(nullptr), encodingPacket(nullptr),
               converterContext(nullptr), isPlayingFlag(false) {
 
         LOG(INFO) << "Constructing transcoder for \"" << videoSourceUrl << "\"";
@@ -322,8 +326,11 @@ namespace LIRS {
 
     void Transcoder::initializeConverter() {
 
-        packet = av_packet_alloc();
-        av_init_packet(packet);
+        decodingPacket = av_packet_alloc();
+        av_init_packet(decodingPacket);
+
+        encodingPacket = av_packet_alloc();
+        av_init_packet(encodingPacket);
 
         rawFrame = av_frame_alloc();
 

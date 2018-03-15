@@ -70,9 +70,7 @@ namespace LIRS {
 
         const auto outFrameRateMs = 1000 / outputFrameRate;
 
-        LOG(WARN) << "Out FPS: " << outFrameRateMs;
-
-        while (isPlayingFlag.load()) { // todo true
+        while (isPlayingFlag.load()) {
 
             av_frame_make_writable(convertedFrame);
 

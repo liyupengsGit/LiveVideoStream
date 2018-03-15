@@ -5,12 +5,14 @@
 namespace LIRS {
 
 
-    Transcoder *Transcoder::newInstance(std::string sourceUrl, std::string shortDevName, size_t frameWidth, size_t frameHeight,
-                                        std::string rawPixelFormatStr, std::string encoderPixelFormatStr,
-                                        size_t frameRate, size_t outputFrameRate, size_t outputBitRate) {
+    Transcoder *
+    Transcoder::newInstance(std::string sourceUrl, std::string shortDevName, size_t frameWidth, size_t frameHeight,
+                            std::string rawPixelFormatStr, std::string encoderPixelFormatStr,
+                            size_t frameRate, size_t outputFrameRate, size_t outputBitRate) {
 
         // invoke constructor in order to create new instance
-        return new Transcoder(sourceUrl, shortDevName, frameWidth, frameHeight, rawPixelFormatStr, encoderPixelFormatStr,
+        return new Transcoder(sourceUrl, shortDevName, frameWidth, frameHeight, rawPixelFormatStr,
+                              encoderPixelFormatStr,
                               frameRate, outputFrameRate, outputBitRate);
     }
 
@@ -148,7 +150,7 @@ namespace LIRS {
             // sleep some delta ms in order to achieve the desired framerate
             if (workTime.count() < outFrameRateMs) {
 
-                std::chrono::duration<double, std::milli> delta_ms (outFrameRateMs - workTime.count());
+                std::chrono::duration<double, std::milli> delta_ms(outFrameRateMs - workTime.count());
                 auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(delta_ms);
                 std::this_thread::sleep_for(std::chrono::milliseconds(delta.count()));
             }
@@ -175,7 +177,8 @@ namespace LIRS {
         return false;
     }
 
-    Transcoder::Transcoder(std::string url, std::string shortDevName, size_t w, size_t h, std::string rawPixFmtStr, std::string encPixFmtStr,
+    Transcoder::Transcoder(std::string url, std::string shortDevName, size_t w, size_t h, std::string rawPixFmtStr,
+                           std::string encPixFmtStr,
                            size_t frameRate, size_t outFrameRate, size_t outBitRate)
             : videoSourceUrl(std::move(url)), shortDeviceName(std::move(shortDevName)),
               frameWidth(w), frameHeight(h), frameRate(frameRate), outputFrameRate(outFrameRate),
@@ -310,7 +313,8 @@ namespace LIRS {
 
         // set the encoder options
         AVDictionary *options = nullptr;
-        av_dict_set(&options, "preset", "veryfast", 0); // slower, slow, medium, fast, faster, veryfast, superfast, ultrfast
+        av_dict_set(&options, "preset", "veryfast",
+                    0); // slower, slow, medium, fast, faster, veryfast, superfast, ultrfast
         av_dict_set(&options, "tune", "zerolatency", 0); // for live streaming
         av_dict_set_int(&options, "crf", 21, 0); // 22 and 23 are acceptable
 

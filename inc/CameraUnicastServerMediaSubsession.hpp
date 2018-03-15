@@ -8,16 +8,19 @@
 
 namespace LIRS {
 
+    /*
+     * Live555 unicast server media subsession class implementation.
+     */
     class CameraUnicastServerMediaSubsession : public OnDemandServerMediaSubsession {
 
     public:
-        static CameraUnicastServerMediaSubsession* createNew(UsageEnvironment& env, StreamReplicator* replicator);
+        static CameraUnicastServerMediaSubsession *createNew(UsageEnvironment &env, StreamReplicator *replicator);
 
     protected:
 
-        StreamReplicator* replicator;
+        StreamReplicator *replicator;
 
-        CameraUnicastServerMediaSubsession(UsageEnvironment& env, StreamReplicator* replicator);
+        CameraUnicastServerMediaSubsession(UsageEnvironment &env, StreamReplicator *replicator);
 
         FramedSource *createNewStreamSource(unsigned clientSessionId, unsigned &estBitrate) override;
 

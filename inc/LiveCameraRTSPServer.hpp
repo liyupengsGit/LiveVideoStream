@@ -75,7 +75,7 @@ namespace LIRS {
 
             // create media session for each video source (transcoder)
             for (auto &transcoder : allocatedTranscoders) {
-                addMediaSession(transcoder, "camera" + transcoder->getDeviceName(), "description");
+                addMediaSession(transcoder, transcoder->getAlias(), "description");
             }
 
             env->taskScheduler().doEventLoop(&watcher); // do not return

@@ -91,7 +91,15 @@ namespace LIRS {
     void Transcoder::runEncoder() {
 
         // calculate the desired framerate's duration between frames in milliseconds
-        const size_t outFrameRateMs = 1000 / outputFrameRate;
+        const double outFrameRateMs = 1000. / outputFrameRate;
+
+        // wait for source readiness
+        while (!isPlayingFlag.load()) {
+            std::this_thread::yield();
+        }
+
+        // sleep in order to skip first broken frames from the resource
+        std::this_thread::sleep_for(std::chrono::seconds(1));
 
         // while the device is accessible
         while (isPlayingFlag.load()) {
@@ -106,9 +114,11 @@ namespace LIRS {
             fetchLastFrameMutex.lock();
 
             // convert raw frame into another pixel format and store it in convertedFrame
-            sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(rawFrame->data),
+            auto h_out = sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(rawFrame->data),
                       rawFrame->linesize, 0, static_cast<int>(frameHeight), convertedFrame->data,
                       convertedFrame->linesize);
+
+            assert(h_out != 0);
 
             // copy pts/dts, etc. (see ffmpeg docs)
             av_frame_copy_props(convertedFrame, rawFrame);
@@ -296,6 +306,7 @@ namespace LIRS {
         encoderContext.codecContext->height = static_cast<int>(frameHeight);
 
         // choose the appropriate profile
+
         if (encoderPixFormat == AV_PIX_FMT_YUYV422) {
             encoderContext.codecContext->profile = FF_PROFILE_H264_HIGH_422_INTRA;
         } else {
@@ -305,28 +316,17 @@ namespace LIRS {
         encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(outputFrameRate)};
         encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(outputFrameRate), 1};
         encoderContext.codecContext->pix_fmt = encoderPixFormat;
-
-        // fixme: tuning for lesser latency
-        encoderContext.codecContext->bit_rate_tolerance = 0;
-        encoderContext.codecContext->rc_max_rate = 0;
         encoderContext.codecContext->max_b_frames = 0;
-        encoderContext.codecContext->me_cmp = 1;
-        encoderContext.codecContext->me_range = 8;
-        encoderContext.codecContext->qmin = 4;
-        encoderContext.codecContext->qmax = 30;
-        encoderContext.codecContext->flags |= AV_CODEC_FLAG_LOOP_FILTER;
-        encoderContext.codecContext->me_subpel_quality = 5;
-        encoderContext.codecContext->qcompress = 0.6;
-        encoderContext.codecContext->max_qdiff = 4;
 
         // copy encoder parameters to the video stream parameters
         avcodec_parameters_from_context(encoderContext.videoStream->codecpar, encoderContext.codecContext);
 
         // set the encoder options
         AVDictionary *options = nullptr;
-        av_dict_set(&options, "preset", "faster", 0); // slower, slow, medium, fast, faster, veryfast, superfast, ultrfast
+        av_dict_set(&options, "preset", "ultrafast", 0); // slower, slow, medium, fast, faster, veryfast, superfast, ultrafast
         av_dict_set(&options, "tune", "zerolatency", 0); // for live streaming
-        av_dict_set_int(&options, "crf", 23, 0); // 21, 22 and 23 are acceptable
+        av_dict_set_int(&options, "crf", 35, 0); // 21, 22 and 23 are acceptable
+        av_opt_set(encoderContext.codecContext->priv_data, "x264opts", "no-chroma-me:sync-lookahead=0:me=hex:no-mbtree:sliced-threads:slice-max-size=1470", 0);
 
 
         // open the output format to use given codec

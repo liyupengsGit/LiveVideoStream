@@ -21,8 +21,6 @@ namespace LIRS {
         // create trigger invoking method which will deliver frame
         eventTriggerId = envir().taskScheduler().createEventTrigger(deliverFrame0);
 
-        LOG(DEBUG) << "Event trigger ID for deliverFrame0: " << eventTriggerId;
-
         // set transcoder's callback indicating new encoded data availability to the onEncodedData function
         transcoder->setOnEncodedDataCallback(std::bind(&H264FramedSource::onEnCodedData, this));
 

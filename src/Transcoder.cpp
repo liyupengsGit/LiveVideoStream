@@ -308,15 +308,12 @@ namespace LIRS {
 
         // copy encoder parameters to the video stream parameters
         avcodec_parameters_from_context(encoderContext.videoStream->codecpar, encoderContext.codecContext);
-        encoderContext.videoStream->r_frame_rate = (AVRational) {static_cast<int>(outputFrameRate), 1};
-        encoderContext.videoStream->avg_frame_rate = (AVRational) {static_cast<int>(outputFrameRate), 1};
 
         // set the encoder options
         AVDictionary *options = nullptr;
-        av_dict_set(&options, "preset", "veryfast",
-                    0); // slower, slow, medium, fast, faster, veryfast, superfast, ultrfast
+        av_dict_set(&options, "preset", "faster", 0); // slower, slow, medium, fast, faster, veryfast, superfast, ultrfast
         av_dict_set(&options, "tune", "zerolatency", 0); // for live streaming
-        av_dict_set_int(&options, "crf", 21, 0); // 22 and 23 are acceptable
+        av_dict_set_int(&options, "crf", 23, 0); // 22 and 23 are acceptable
 
         // open the output format to use given codec
         statCode = avcodec_open2(encoderContext.codecContext, encoderContext.codec, &options);

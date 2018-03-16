@@ -19,6 +19,8 @@ extern "C" {
 #include <libswscale/swscale.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/pixdesc.h>
+#include <libavfilter/avfiltergraph.h>
+#include <libavfilter/buffersink.h>
 }
 #endif
 
@@ -272,6 +274,14 @@ namespace LIRS {
          * Flag indicating whether the device is accessible or not.
          */
         std::atomic_bool isPlayingFlag;
+
+        // todo filter
+        void initFilters(const std::string& filterDescr);
+
+        AVFilterGraph* filterGraph = nullptr;
+        AVFilterContext* bufferSrcCtx = nullptr;
+        AVFilterContext* bufferSinkCtx = nullptr;
+
 
         /** constants **/
 

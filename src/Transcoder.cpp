@@ -221,6 +221,8 @@ namespace LIRS {
 
         // initialize converter form raw pixel format to the supported by the encoder one.
         initializeConverter();
+
+        initFilters("fps");
     }
 
     void Transcoder::setOnEncodedDataCallback(std::function<void()> callback) {
@@ -437,6 +439,46 @@ namespace LIRS {
 
     std::string Transcoder::getAlias() const {
         return shortDeviceName;
+    }
+
+    // todo filters
+    void Transcoder::initFilters(const std::string &filterDescr) {
+
+        avfilter_register_all();
+
+        auto bufferSrc = avfilter_get_by_name("buffer");
+        auto bufferSink = avfilter_get_by_name("buffersink");
+        auto outputs = avfilter_inout_alloc();
+        auto inputs = avfilter_inout_alloc();
+        filterGraph = avfilter_graph_alloc();
+
+        char args[512];
+        snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d:%d",
+                 (int)frameWidth, (int)frameHeight, rawPixFormat,
+                 decoderContext.videoStream->time_base.num, decoderContext.videoStream->time_base.den,
+                 decoderContext.videoStream->sample_aspect_ratio.num, decoderContext.videoStream->sample_aspect_ratio.den, 5);
+
+        auto status = avfilter_graph_create_filter(&bufferSrcCtx, bufferSrc, "in", args, nullptr, filterGraph);
+        assert(status >= 0);
+
+        status = avfilter_graph_create_filter(&bufferSinkCtx, bufferSink, "out", nullptr, nullptr, filterGraph);
+        assert(status >= 0);
+
+        outputs->name = av_strdup("in");
+        outputs->filter_ctx = bufferSrcCtx;
+        outputs->pad_idx = 0;
+        outputs->next = nullptr;
+
+        inputs->name = av_strdup("out");
+        inputs->filter_ctx = bufferSinkCtx;
+        inputs->pad_idx = 0;
+        inputs->next = nullptr;
+
+        status = avfilter_graph_parse(filterGraph, "fps", inputs, outputs, nullptr);
+        assert(status >= 0);
+
+        status = avfilter_graph_config(filterGraph, nullptr);
+        assert(status >= 0);
     }
 
 }

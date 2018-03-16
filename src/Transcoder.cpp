@@ -101,17 +101,20 @@ namespace LIRS {
         // sleep in order to skip first broken frames from the resource
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
+        auto timeNow = std::chrono::high_resolution_clock::now();
+        auto timeLast = timeNow;
+
         // while the device is accessible
         while (isPlayingFlag.load()) {
-
-            // get the starting point of time
-            auto timeNow = std::chrono::high_resolution_clock::now();
 
             // make the frame writable (see ffmpeg docs)
             av_frame_make_writable(convertedFrame);
 
             // lock access to the raw frame
             fetchLastFrameMutex.lock();
+
+            // get the starting point of time
+            timeNow = std::chrono::high_resolution_clock::now();
 
             // convert raw frame into another pixel format and store it in convertedFrame
             auto h_out = sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(rawFrame->data),
@@ -133,6 +136,8 @@ namespace LIRS {
                                      encoderContext.videoStream->time_base);
                 */
 
+                timeLast = std::chrono::high_resolution_clock::now();
+
                 // lock access to the encoded data queue
                 outQueueMutex.lock();
 
@@ -151,17 +156,15 @@ namespace LIRS {
             // reset packet (see ffmpeg docs)
             av_packet_unref(encodingPacket);
 
-            // get the ending point of time
-            auto timeLast = std::chrono::high_resolution_clock::now();
-
             // calculate the elapsed time
             std::chrono::duration<double, std::milli> workTime = timeLast - timeNow;
 
             // sleep some delta ms in order to achieve the desired framerate
-            if (workTime.count() < outFrameRateMs) {
+            if (workTime.count() < outFrameRateMs && outputFrameRate < frameRate) {
 
                 std::chrono::duration<double, std::milli> delta_ms(outFrameRateMs - workTime.count());
                 auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(delta_ms);
+                LOG(WARN) << "Sleep for: " << delta.count();
                 std::this_thread::sleep_for(std::chrono::milliseconds(delta.count()));
             }
         }
@@ -305,29 +308,34 @@ namespace LIRS {
         encoderContext.codecContext->width = static_cast<int>(frameWidth);
         encoderContext.codecContext->height = static_cast<int>(frameHeight);
 
-        // choose the appropriate profile
-
-        if (encoderPixFormat == AV_PIX_FMT_YUYV422) {
-            encoderContext.codecContext->profile = FF_PROFILE_H264_HIGH_422_INTRA;
-        } else {
-            encoderContext.codecContext->profile = FF_PROFILE_H264_HIGH_10_INTRA;
-        }
+        encoderContext.codecContext->profile = FF_PROFILE_H264_BASELINE;
 
         encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(outputFrameRate)};
         encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(outputFrameRate), 1};
+
+        // set encoder's pixel format (most of the players support yuv420p)
         encoderContext.codecContext->pix_fmt = encoderPixFormat;
-        encoderContext.codecContext->max_b_frames = 0;
+
+        if (encoderContext.formatContext->flags & AVFMT_GLOBALHEADER) {
+            encoderContext.codecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+        }
 
         // copy encoder parameters to the video stream parameters
         avcodec_parameters_from_context(encoderContext.videoStream->codecpar, encoderContext.codecContext);
 
-        // set the encoder options
         AVDictionary *options = nullptr;
-        av_dict_set(&options, "preset", "ultrafast", 0); // slower, slow, medium, fast, faster, veryfast, superfast, ultrafast
-        av_dict_set(&options, "tune", "zerolatency", 0); // for live streaming
-        av_dict_set_int(&options, "crf", 35, 0); // 21, 22 and 23 are acceptable
-        av_opt_set(encoderContext.codecContext->priv_data, "x264opts", "no-chroma-me:sync-lookahead=0:me=hex:no-mbtree:sliced-threads:slice-max-size=1470", 0);
 
+        // the faster you get, the less compression is achieved
+        av_dict_set(&options, "preset", "veryfast", 0);
+
+        // optimization for fast encoding and low latency streaming (see x264 docs for more info)
+        av_dict_set(&options, "tune", "zerolatency", 0);
+
+        // constant rate factor
+        av_dict_set_int(&options, "crf", 27, 0); // 21, 22 and 23 are acceptable
+
+        // set additional x264 options
+        av_opt_set(encoderContext.codecContext->priv_data, "x264opts", "slice-max-size=100:intra-refresh=1", 0);
 
         // open the output format to use given codec
         statCode = avcodec_open2(encoderContext.codecContext, encoderContext.codec, &options);

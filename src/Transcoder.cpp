@@ -312,7 +312,7 @@ namespace LIRS {
         av_dict_set(&options, "tune", "zerolatency", 0);
 
         // constant rate factor
-        av_dict_set_int(&options, "crf", 23, 0); // 21, 22 and 23 are acceptable
+        av_dict_set_int(&options, "crf", 27, 0); // 21, 22 and 23 are acceptable
 
         // set additional x264 options
         av_opt_set(encoderContext.codecContext->priv_data, "x264opts", "slice-max-size=1400:intra-refresh=1", 0);
@@ -452,7 +452,8 @@ namespace LIRS {
 
         // fps=fps=4
         // framestep=step=5
-        status = avfilter_graph_parse(filterGraph, "framestep=step=2", inputs, outputs, nullptr);
+//        char[]
+        status = avfilter_graph_parse(filterGraph, "framestep=step=5", inputs, outputs, nullptr);
         assert(status >= 0);
 
         status = avfilter_graph_config(filterGraph, nullptr);

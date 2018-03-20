@@ -21,6 +21,7 @@ extern "C" {
 #include <libavutil/pixdesc.h>
 #include <libavfilter/avfiltergraph.h>
 #include <libavfilter/buffersink.h>
+#include <libavfilter/buffersrc.h>
 }
 #endif
 
@@ -78,13 +79,12 @@ namespace LIRS {
          * @param encoderPixelFormatStr - pixel format of the encoded data (see supported pixel formats for libx264).
          * @param frameRate - hardware's framerate (could be changed if not supported by the device).
          * @param outputFrameRate - desired framerate (used to decrease device's framerate).
-         * @param outputBitRate - desired bitrate for the encoder (libx264, -b flag).
          * @return pointer to the created instance of the transcoder class.
          */
         static Transcoder *
         newInstance(std::string sourceUrl, std::string shortDevName, size_t frameWidth, size_t frameHeight,
                     std::string rawPixelFormatStr, std::string encoderPixelFormatStr,
-                    size_t frameRate, size_t outputFrameRate, size_t outputBitRate);
+                    size_t frameRate, size_t outputFrameRate);
 
         /**
          * Prohibit copy constructor.
@@ -103,20 +103,7 @@ namespace LIRS {
          */
         ~Transcoder();
 
-        /**
-         * Decodes video data from video device.
-         * The device's supported framerate is used.
-         */
-        void runDecoder();
-
-        /**
-         * Encodes captured video data.
-         * The source's framerate is decreased to the specified value.
-         * This function invokes callback which is used in order send signal to the consumer
-         * that new encoded video data is arrived, e.g. for server.
-         * The data is stored in the internal buffer.
-         */
-        void runEncoder();
+        void run();
 
         /**
          * Retrieves encoded data from the internal buffer.
@@ -140,6 +127,11 @@ namespace LIRS {
          */
         std::string getDeviceName() const;
 
+        /**
+         * Returns the device alias, e.g. frontCamera.
+         *
+         * @return device alias.
+         */
         std::string getAlias() const;
 
     private:
@@ -160,7 +152,7 @@ namespace LIRS {
          * @param outBitRate - encoder's bitrate (see libx264, -b flag).
          */
         Transcoder(std::string url, std::string shortDevName, size_t w, size_t h, std::string rawPixFmtStr,
-                   std::string encPixFmtStr, size_t frameRate, size_t outFrameRate, size_t outBitRate);
+                   std::string encPixFmtStr, size_t frameRate, size_t outFrameRate);
 
         /* parameters */
 
@@ -209,11 +201,6 @@ namespace LIRS {
          * Video source's bitrate (raw video data).
          */
         size_t sourceBitRate;
-
-        /**
-         * Encoded video data bitrate (encoder).
-         */
-        size_t outputBitRate;
 
         /**
          * Decoder video context.
@@ -265,23 +252,20 @@ namespace LIRS {
         std::queue<std::vector<uint8_t>> outQueue;
 
         /**
-         * Mutex used to control the framerate.
-         * It locks/unlocks access to the raw frame data (see rawFrame).
-         */
-        std::mutex fetchLastFrameMutex;
-
-        /**
          * Flag indicating whether the device is accessible or not.
          */
         std::atomic_bool isPlayingFlag;
 
-        // todo filter
-        void initFilters(const std::string& filterDescr);
+        AVFilterGraph* filterGraph;
 
-        AVFilterGraph* filterGraph = nullptr;
-        AVFilterContext* bufferSrcCtx = nullptr;
-        AVFilterContext* bufferSinkCtx = nullptr;
+        AVFilterContext* bufferSrcCtx;
 
+        AVFilterContext* bufferSinkCtx;
+
+        /**
+         * Callback function called when new encoded video data is available.
+         */
+        std::function<void()> onEncodedDataCallback;
 
         /** constants **/
 
@@ -335,12 +319,7 @@ namespace LIRS {
          */
         void initializeConverter();
 
-        /* Parameters */
-
-        /**
-         * Callback function called when new encoded video data is available.
-         */
-        std::function<void()> onEncodedDataCallback;
+        void initFilters();
     };
 }
 

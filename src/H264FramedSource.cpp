@@ -8,6 +8,9 @@ namespace LIRS {
 
     H264FramedSource::~H264FramedSource() {
 
+        // delete resources
+        delete transcoder;
+
         // delete trigger
         envir().taskScheduler().deleteEventTrigger(eventTriggerId);
         eventTriggerId = 0;
@@ -22,12 +25,12 @@ namespace LIRS {
         eventTriggerId = envir().taskScheduler().createEventTrigger(deliverFrame0);
 
         // set transcoder's callback indicating new encoded data availability to the onEncodedData function
-        transcoder->setOnEncodedDataCallback(std::bind(&H264FramedSource::onEnCodedData, this));
+        transcoder->setOnEncodedDataCallback(std::bind(&H264FramedSource::onEncodedData, this));
 
-        // start video data encoding and decoding threads
+        // start video data encoding and decoding
 
         std::thread([transcoder]() {
-            transcoder->runDecoder();
+            transcoder->run();
         }).detach();
     }
 
@@ -55,18 +58,16 @@ namespace LIRS {
 
             gettimeofday(&fPresentationTime, nullptr); // can be changed to the actual frame's captured time
 
-            memmove(fTo, frame.data(), fFrameSize); // DO NOT CHANGE ADDRESS, ONLY COPY (see Live555 docs)
+            memcpy(fTo, frame.data(), fFrameSize); // DO NOT CHANGE ADDRESS, ONLY COPY (see Live555 docs)
 
             FramedSource::afterGetting(this); // should be invoked after successfully getting data
 
         } else {
             fFrameSize = 0; // nothing to deliver
         }
-
-        frame.clear();
     }
 
-    void H264FramedSource::onEnCodedData() {
+    void H264FramedSource::onEncodedData() {
         // publish an event to be handled by the event loop
         envir().taskScheduler().triggerEvent(eventTriggerId, this);
     }

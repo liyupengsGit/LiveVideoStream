@@ -1,22 +1,23 @@
 #include "Transcoder.hpp"
 
-#include <utility>
-
 namespace LIRS {
 
+    Transcoder *Transcoder::newInstance(std::string sourceUrl, std::string shortDevName, size_t frameWidth,
+                                        size_t frameHeight, std::string rawPixelFormatStr,
+                                        std::string encoderPixelFormatStr, size_t frameRate, size_t outputFrameRate) {
 
-    Transcoder *
-    Transcoder::newInstance(std::string sourceUrl, std::string shortDevName, size_t frameWidth, size_t frameHeight,
-                            std::string rawPixelFormatStr, std::string encoderPixelFormatStr,
-                            size_t frameRate, size_t outputFrameRate, size_t outputBitRate) {
-
-        // invoke constructor in order to create new instance
+        // create new instance
         return new Transcoder(sourceUrl, shortDevName, frameWidth, frameHeight, rawPixelFormatStr,
-                              encoderPixelFormatStr,
-                              frameRate, outputFrameRate, outputBitRate);
+                              encoderPixelFormatStr, frameRate, outputFrameRate);
     }
 
     Transcoder::~Transcoder() {
+
+        isPlayingFlag.store(false);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+
+        avfilter_graph_free(&filterGraph);
 
         // close dummy file
         avio_close(encoderContext.formatContext->pb);
@@ -55,120 +56,94 @@ namespace LIRS {
         frameRate = 0;
         outputFrameRate = 0;
         sourceBitRate = 0;
-        outputBitRate = 0;
 
         LOG(INFO) << "Transcoder has been destructed";
     }
 
-    void Transcoder::runDecoder() {
+    void Transcoder::run() {
+
+        auto filterFrame = av_frame_alloc();
 
         // set the playing flag
         isPlayingFlag.store(true);
 
         // read raw data from the device into the packet
-        while (av_read_frame(decoderContext.formatContext, decodingPacket) == 0) {
+        while (isPlayingFlag.load() && av_read_frame(decoderContext.formatContext, decodingPacket) == 0) {
 
             // check whether it is a video stream's data
             if (decodingPacket->stream_index == decoderContext.videoStream->index) {
 
-                // lock access to the raw frame
-                fetchLastFrameMutex.lock();
-
                 // fill raw frame with data from decoded packet
-                decode(decoderContext.codecContext, rawFrame, decodingPacket);
+                if (decode(decoderContext.codecContext, rawFrame, decodingPacket)) {
 
-                fetchLastFrameMutex.unlock();
+                    // push frames to the buffer
+                    auto statusCode = av_buffersrc_add_frame_flags(bufferSrcCtx, rawFrame, AV_BUFFERSRC_FLAG_KEEP_REF);
+                    assert(statusCode >= 0);
+
+                    // pull frames from filter graph
+                    while (true) {
+
+                        statusCode = av_buffersink_get_frame(bufferSinkCtx, filterFrame);
+
+                        if (statusCode == AVERROR(EAGAIN) || statusCode == AVERROR_EOF) {
+                            break;
+                        }
+
+                        assert(statusCode >= 0);
+
+                        av_frame_make_writable(convertedFrame);
+
+                        // convert raw frame into another pixel format and store it in convertedFrame
+                        auto h_out = sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(filterFrame->data),
+                                               filterFrame->linesize, 0, static_cast<int>(frameHeight), convertedFrame->data,
+                                               convertedFrame->linesize);
+
+                        assert(h_out != 0);
+
+                        // copy pts/dts, etc. (see ffmpeg docs)
+                        av_frame_copy_props(convertedFrame, filterFrame);
+
+                        if (encode(encoderContext.codecContext, convertedFrame, encodingPacket) >= 0) {
+
+                            /*
+                            av_packet_rescale_ts(encodingPacket, decoderContext.videoStream->time_base,
+                                                 encoderContext.videoStream->time_base);
+                            */
+
+                            // lock access to the encoded data queue
+                            outQueueMutex.lock();
+
+                            // add encoded data to the outgoing queue truncating first NALU start code 4 bytes
+                            outQueue.emplace(std::vector<uint8_t>(encodingPacket->data + H264_START_CODE_BYTES_NUMBER,
+                                                               encodingPacket->data + encodingPacket->size));
+
+                            outQueueMutex.unlock();
+
+                            // invoke the callback indicating that a new encoded data is available
+                            if (onEncodedDataCallback) {
+                                onEncodedDataCallback();
+                            }
+                        }
+
+                        av_packet_unref(encodingPacket);
+
+                    }
+
+                    av_frame_unref(filterFrame);
+                }
             }
 
-            // reset the packet (see ffmpeg docs)
             av_packet_unref(decodingPacket);
         }
 
         // capturing from the device is unavailable
         isPlayingFlag.store(false);
+
+        av_frame_free(&filterFrame);
     }
 
-    void Transcoder::runEncoder() {
 
-        // calculate the desired framerate's duration between frames in milliseconds
-        const double outFrameRateMs = 1000. / outputFrameRate;
 
-        // wait for source readiness
-        while (!isPlayingFlag.load()) {
-            std::this_thread::yield();
-        }
-
-        // sleep in order to skip first broken frames from the resource
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-
-        auto timeNow = std::chrono::high_resolution_clock::now();
-        auto timeLast = timeNow;
-
-        // while the device is accessible
-        while (isPlayingFlag.load()) {
-
-            // make the frame writable (see ffmpeg docs)
-            av_frame_make_writable(convertedFrame);
-
-            // lock access to the raw frame
-            fetchLastFrameMutex.lock();
-
-            // get the starting point of time
-            timeNow = std::chrono::high_resolution_clock::now();
-
-            // convert raw frame into another pixel format and store it in convertedFrame
-            auto h_out = sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(rawFrame->data),
-                      rawFrame->linesize, 0, static_cast<int>(frameHeight), convertedFrame->data,
-                      convertedFrame->linesize);
-
-            assert(h_out != 0);
-
-            // copy pts/dts, etc. (see ffmpeg docs)
-            av_frame_copy_props(convertedFrame, rawFrame);
-
-            fetchLastFrameMutex.unlock();
-
-            // pass converted frame to the encoder and get encoded data in the packet
-            if (encode(encoderContext.codecContext, convertedFrame, encodingPacket) >= 0) {
-
-                /*
-                av_packet_rescale_ts(encodingPacket, decoderContext.videoStream->time_base,
-                                     encoderContext.videoStream->time_base);
-                */
-
-                timeLast = std::chrono::high_resolution_clock::now();
-
-                // lock access to the encoded data queue
-                outQueueMutex.lock();
-
-                // add encoded data to the outgoing queue truncating first NALU start code 4 bytes
-                outQueue.push(std::vector<uint8_t>(encodingPacket->data + H264_START_CODE_BYTES_NUMBER,
-                                                   encodingPacket->data + encodingPacket->size));
-
-                outQueueMutex.unlock();
-
-                // invoke the callback indicating that a new encoded data is available
-                if (onEncodedDataCallback) {
-                    onEncodedDataCallback();
-                }
-            }
-
-            // reset packet (see ffmpeg docs)
-            av_packet_unref(encodingPacket);
-
-            // calculate the elapsed time
-            std::chrono::duration<double, std::milli> workTime = timeLast - timeNow;
-
-            // sleep some delta ms in order to achieve the desired framerate
-            if (workTime.count() < outFrameRateMs && outputFrameRate < frameRate) {
-
-                std::chrono::duration<double, std::milli> delta_ms(outFrameRateMs - workTime.count());
-                auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(delta_ms);
-                LOG(WARN) << "Sleep for: " << delta.count();
-                std::this_thread::sleep_for(std::chrono::milliseconds(delta.count()));
-            }
-        }
-    }
 
     bool Transcoder::retrieveEncodedData(std::vector<uint8_t> &data) {
 
@@ -191,13 +166,13 @@ namespace LIRS {
     }
 
     Transcoder::Transcoder(std::string url, std::string shortDevName, size_t w, size_t h, std::string rawPixFmtStr,
-                           std::string encPixFmtStr,
-                           size_t frameRate, size_t outFrameRate, size_t outBitRate)
+                           std::string encPixFmtStr, size_t frameRate, size_t outFrameRate)
             : videoSourceUrl(std::move(url)), shortDeviceName(std::move(shortDevName)),
               frameWidth(w), frameHeight(h), frameRate(frameRate), outputFrameRate(outFrameRate),
-              sourceBitRate(0), outputBitRate(outBitRate), decoderContext({}), encoderContext({}),
+              sourceBitRate(0), decoderContext({}), encoderContext({}),
               rawFrame(nullptr), convertedFrame(nullptr), decodingPacket(nullptr), encodingPacket(nullptr),
-              converterContext(nullptr), isPlayingFlag(false) {
+              converterContext(nullptr), isPlayingFlag(false),
+              filterGraph(nullptr), bufferSrcCtx(nullptr), bufferSinkCtx(nullptr) {
 
         LOG(INFO) << "Constructing transcoder for \"" << videoSourceUrl << "\"";
 
@@ -219,10 +194,9 @@ namespace LIRS {
 
         initializeEncoder();
 
-        // initialize converter form raw pixel format to the supported by the encoder one.
         initializeConverter();
 
-        initFilters("fps");
+        initFilters();
     }
 
     void Transcoder::setOnEncodedDataCallback(std::function<void()> callback) {
@@ -230,10 +204,14 @@ namespace LIRS {
     }
 
     void Transcoder::registerAll() {
-        LOG(DEBUG) << "Registering AV components";
+
         av_register_all();
-        avdevice_register_all(); // register devices, e.g. v4l2
-        avcodec_register_all(); // register codecs, e.g. H.264, HEVC(H.265)
+
+        avdevice_register_all();
+
+        avcodec_register_all();
+
+        avfilter_register_all();
     }
 
     void Transcoder::initializeDecoder() {
@@ -426,7 +404,7 @@ namespace LIRS {
         converterContext = sws_getCachedContext(nullptr, static_cast<int>(frameWidth),
                                                 static_cast<int>(frameHeight), rawPixFormat,
                                                 static_cast<int>(frameWidth), static_cast<int>(frameHeight),
-                                                encoderPixFormat, SWS_BILINEAR, nullptr, nullptr, nullptr);
+                                                encoderPixFormat, SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
 
         LOG(INFO) << "Pixel format converter for \"" << videoSourceUrl << "\" has been created ("
                   << av_get_pix_fmt_name(rawPixFormat) << " -> " << av_get_pix_fmt_name(encoderPixFormat) << ")";
@@ -441,22 +419,20 @@ namespace LIRS {
         return shortDeviceName;
     }
 
-    // todo filters
-    void Transcoder::initFilters(const std::string &filterDescr) {
-
-        avfilter_register_all();
+    void Transcoder::initFilters() {
 
         auto bufferSrc = avfilter_get_by_name("buffer");
         auto bufferSink = avfilter_get_by_name("buffersink");
+
         auto outputs = avfilter_inout_alloc();
         auto inputs = avfilter_inout_alloc();
+
         filterGraph = avfilter_graph_alloc();
 
-        char args[512];
-        snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d:%d",
+        char args[64];
+        snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d",
                  (int)frameWidth, (int)frameHeight, rawPixFormat,
-                 decoderContext.videoStream->time_base.num, decoderContext.videoStream->time_base.den,
-                 decoderContext.videoStream->sample_aspect_ratio.num, decoderContext.videoStream->sample_aspect_ratio.den, 5);
+                 decoderContext.videoStream->time_base.num, decoderContext.videoStream->time_base.den, 1, 1);
 
         auto status = avfilter_graph_create_filter(&bufferSrcCtx, bufferSrc, "in", args, nullptr, filterGraph);
         assert(status >= 0);
@@ -474,7 +450,9 @@ namespace LIRS {
         inputs->pad_idx = 0;
         inputs->next = nullptr;
 
-        status = avfilter_graph_parse(filterGraph, "fps", inputs, outputs, nullptr);
+        // fps=fps=4
+        // framestep=step=5
+        status = avfilter_graph_parse(filterGraph, "framestep=step=2", inputs, outputs, nullptr);
         assert(status >= 0);
 
         status = avfilter_graph_config(filterGraph, nullptr);

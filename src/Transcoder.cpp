@@ -284,8 +284,8 @@ namespace LIRS {
 
         LOG(WARN) << "Output fps: " << outputFrameRate;
 
-        encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(outputFrameRate)};
-        encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(outputFrameRate), 1};
+        encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(frameRate)};
+        encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(frameRate), 1};
 
         // set encoder's pixel format (most of the players support yuv420p)
         encoderContext.codecContext->pix_fmt = encoderPixFormat;
@@ -361,8 +361,8 @@ namespace LIRS {
         filterGraph = avfilter_graph_alloc();
 
         char args[64];
-        snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d", (int) frameWidth, (int) frameHeight, rawPixFormat,
-                 decoderContext.videoStream->time_base.num, decoderContext.videoStream->time_base.den, 1, 1);
+        snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d:frame_rate=%d/%d", (int) frameWidth, (int) frameHeight, rawPixFormat,
+                 decoderContext.videoStream->time_base.num, decoderContext.videoStream->time_base.den, 1, 1, frameRate, 1);
 
         auto status = avfilter_graph_create_filter(&bufferSrcCtx, bufferSrc, "in", args, nullptr, filterGraph);
         assert(status >= 0);

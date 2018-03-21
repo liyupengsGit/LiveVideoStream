@@ -28,11 +28,22 @@ namespace LIRS {
 
         ~LiveCameraRTSPServer() {
 
-            allocatedTranscoders.clear();
+            Medium::close(server); // deletes all server media sessions
+
+            // delete all framed sources
+            for (auto &src : allocatedVideoSources) {
+                if (src) Medium::close(src);
+            }
+
+            env->reclaim();
+
+            delete scheduler;
+
+            transcoders.clear();
             allocatedVideoSources.clear();
             watcher = 0;
 
-            LOG(INFO) << "RTSP servesr has been destructed";
+            LOG(INFO) << "RTSP server has been destructed";
         }
 
         /**
@@ -45,10 +56,10 @@ namespace LIRS {
         /**
          * Adds transcoder as a source in order to create server media session with it.
          *
-         * @param transcoder - a pointer to the transcoder.
+         * @param transcoder - a reference to the transcoder.
          */
-        void addTranscoder(Transcoder *transcoder) {
-            if (transcoder) allocatedTranscoders.push_back(transcoder);
+        void addTranscoder(Transcoder& transcoder) {
+            transcoders.push_back(&transcoder);
         }
 
         /*
@@ -74,29 +85,18 @@ namespace LIRS {
             }
 
             // create media session for each video source (transcoder)
-            for (auto &transcoder : allocatedTranscoders) {
-                addMediaSession(transcoder, "camera" + transcoder->getDeviceName(), "description");
+            for (auto &transcoder : transcoders) {
+                addMediaSession(transcoder, transcoder->getAlias(), "description");
             }
 
             env->taskScheduler().doEventLoop(&watcher); // do not return
-
-            Medium::close(server); // deletes all server media sessions
-
-            // delete all framed sources
-            for (auto &src : allocatedVideoSources) {
-                if (src) Medium::close(src);
-            }
-
-            env->reclaim();
-
-            delete scheduler;
         }
 
         /** Constants **/
 
         static const unsigned int DEFAULT_RTSP_PORT_NUMBER = 8554;
 
-        static const unsigned int OUT_PACKET_BUFFER_MAX_SIZE = 100 * 1000;
+        static const unsigned int OUT_PACKET_BUFFER_MAX_SIZE = 50 * 1000;
 
     private:
 
@@ -123,7 +123,7 @@ namespace LIRS {
         /**
          * Pointers to video sources (transcoders).
          */
-        std::vector<Transcoder *> allocatedTranscoders;
+        std::vector<Transcoder *> transcoders;
 
         /**
          * Pointers to framed sources (Live555).

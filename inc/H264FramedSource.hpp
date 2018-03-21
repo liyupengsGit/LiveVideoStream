@@ -54,9 +54,10 @@ namespace LIRS {
         /**
          * Function to be called when the video source has a new available encoded data.
          */
-        void onEnCodedData();
+        void onEncodedData();
 
         static void deliverFrame0(void *p);
+
     };
 
 }

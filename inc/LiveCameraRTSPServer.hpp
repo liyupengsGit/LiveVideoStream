@@ -58,8 +58,8 @@ namespace LIRS {
          *
          * @param transcoder - a reference to the transcoder.
          */
-        void addTranscoder(Transcoder& transcoder) {
-            transcoders.push_back(&transcoder);
+        void addTranscoder(Transcoder* transcoder) {
+            transcoders.push_back(transcoder);
         }
 
         /*

@@ -69,7 +69,9 @@ namespace LIRS {
 
                     // push frames to the buffer
                     auto statusCode = av_buffersrc_add_frame_flags(bufferSrcCtx, rawFrame, AV_BUFFERSRC_FLAG_KEEP_REF);
-                    assert(statusCode >= 0);
+//                    assert(statusCode >= 0);
+
+                    if (statusCode < 0) continue; // workaround
 
                     // pull frames from filter graph
                     while (true) {
@@ -280,6 +282,8 @@ namespace LIRS {
 
         encoderContext.codecContext->profile = FF_PROFILE_H264_BASELINE;
 
+        LOG(WARN) << "Output fps: " << outputFrameRate;
+
         encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(outputFrameRate)};
         encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(outputFrameRate), 1};
 
@@ -302,10 +306,10 @@ namespace LIRS {
         av_dict_set(&options, "tune", "zerolatency", 0);
 
         // constant rate factor
-        av_dict_set_int(&options, "crf", 27, 0); // 21, 22 and 23 are acceptable
+        av_dict_set_int(&options, "crf", 45, 0); // 21, 22 and 23 are acceptable
 
         // set additional x264 options
-        av_opt_set(encoderContext.codecContext->priv_data, "x264opts", "slice-max-size=1400:intra-refresh=1", 0);
+        av_opt_set(encoderContext.codecContext->priv_data, "x264opts", "slice-max-size=1500:intra-refresh=1", 0);
 
         // open the output format to use given codec
         statCode = avcodec_open2(encoderContext.codecContext, encoderContext.codec, &options);
@@ -334,10 +338,10 @@ namespace LIRS {
         assert(statCode == 0);
 
         // create converter from raw pixel format to encoder supported pixel format
-        converterContext = sws_getCachedContext(nullptr, static_cast<int>(frameWidth),
-                                                static_cast<int>(frameHeight), rawPixFormat,
-                                                static_cast<int>(frameWidth), static_cast<int>(frameHeight),
-                                                encoderPixFormat, SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
+        converterContext = sws_getCachedContext(nullptr, static_cast<int>(frameWidth), static_cast<int>(frameHeight),
+                                                rawPixFormat, static_cast<int>(frameWidth),
+                                                static_cast<int>(frameHeight), encoderPixFormat, SWS_FAST_BILINEAR,
+                                                nullptr, nullptr, nullptr);
 
         LOG(INFO) << "Pixel format converter for \"" << videoSourceUrl << "\" has been created ("
                   << av_get_pix_fmt_name(rawPixFormat) << " -> " << av_get_pix_fmt_name(encoderPixFormat) << ")";
@@ -357,8 +361,7 @@ namespace LIRS {
         filterGraph = avfilter_graph_alloc();
 
         char args[64];
-        snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d",
-                 (int) frameWidth, (int) frameHeight, rawPixFormat,
+        snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d", (int) frameWidth, (int) frameHeight, rawPixFormat,
                  decoderContext.videoStream->time_base.num, decoderContext.videoStream->time_base.den, 1, 1);
 
         auto status = avfilter_graph_create_filter(&bufferSrcCtx, bufferSrc, "in", args, nullptr, filterGraph);
@@ -377,7 +380,16 @@ namespace LIRS {
         inputs->pad_idx = 0;
         inputs->next = nullptr;
 
-        status = avfilter_graph_parse(filterGraph, "framestep=step=5", inputs, outputs, nullptr);
+        // framestep=step=3
+        // fps=fps=5
+
+        char fpsF[16];
+        char frameStepF[32];
+
+        snprintf(fpsF, sizeof(fpsF), "fps=fps=%d", static_cast<unsigned int>(outputFrameRate));
+        snprintf(frameStepF, sizeof(frameStepF), "framestep=step=%d", static_cast<unsigned int>(frameStep));
+
+        status = avfilter_graph_parse(filterGraph, frameStepF, inputs, outputs, nullptr);
         assert(status >= 0);
 
         status = avfilter_graph_config(filterGraph, nullptr);
@@ -389,7 +401,7 @@ namespace LIRS {
         auto statCode = avcodec_send_packet(codecContext, packet);
 
         if (statCode < 0) {
-            LOG(ERROR) << "Error sending a packet for decoding";
+            LOG(ERROR) << "Error sending a packet for decoding: " << videoSourceUrl;
             return statCode;
         }
 

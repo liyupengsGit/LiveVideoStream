@@ -21,7 +21,7 @@ namespace LIRS {
         auto source = replicator->createStreamReplica();
 
         // using stream discrete framer (because one unit of data is one NALU without start codes)
-        return H264VideoStreamDiscreteFramer::createNew(envir(), source);
+        return H265VideoStreamDiscreteFramer::createNew(envir(), source);
     }
 
     RTPSink *
@@ -30,7 +30,7 @@ namespace LIRS {
 
         LOG(INFO) << "Create new RTP sink";
 
-        return H264VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic);
+        return H265VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic);
     }
 
 }

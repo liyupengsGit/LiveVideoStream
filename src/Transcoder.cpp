@@ -264,7 +264,7 @@ namespace LIRS {
         auto statCode = avformat_alloc_output_context2(&encoderContext.formatContext, nullptr, "null", nullptr);
         assert(statCode >= 0);
 
-        encoderContext.codec = avcodec_find_encoder_by_name("libx264");
+        encoderContext.codec = avcodec_find_encoder_by_name("libx265");
         assert(encoderContext.codec);
 
         // create new video output stream
@@ -306,10 +306,10 @@ namespace LIRS {
         av_dict_set(&options, "tune", "zerolatency", 0);
 
         // constant rate factor
-        av_dict_set_int(&options, "crf", 45, 0); // 21, 22 and 23 are acceptable
+        av_dict_set_int(&options, "crf", 30, 0); // 21, 22 and 23 are acceptable
 
         // set additional x264 options
-        av_opt_set(encoderContext.codecContext->priv_data, "x264opts", "slice-max-size=1500:intra-refresh=1", 0);
+        av_opt_set(encoderContext.codecContext->priv_data, "x265opts", "slice-max-size=1500:intra-refresh=1", 0);
 
         // open the output format to use given codec
         statCode = avcodec_open2(encoderContext.codecContext, encoderContext.codec, &options);

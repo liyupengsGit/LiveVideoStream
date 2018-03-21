@@ -381,13 +381,8 @@ namespace LIRS {
         inputs->pad_idx = 0;
         inputs->next = nullptr;
 
-        // framestep=step=3
-        // fps=fps=5
-
-        char fpsF[16];
         char frameStepF[32];
 
-        snprintf(fpsF, sizeof(fpsF), "fps=fps=%d", static_cast<unsigned int>(outputFrameRate));
         snprintf(frameStepF, sizeof(frameStepF), "framestep=step=%d", static_cast<unsigned int>(frameStep));
 
         status = avfilter_graph_parse(filterGraph, frameStepF, inputs, outputs, nullptr);

@@ -361,8 +361,9 @@ namespace LIRS {
         filterGraph = avfilter_graph_alloc();
 
         char args[64];
-        snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d:frame_rate=%d/%d", (int) frameWidth, (int) frameHeight, rawPixFormat,
-                 decoderContext.videoStream->time_base.num, decoderContext.videoStream->time_base.den, 1, 1, frameRate, 1);
+        snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d:frame_rate=%d/%d", (int) frameWidth, (int) frameHeight,
+                 rawPixFormat, decoderContext.videoStream->time_base.num, decoderContext.videoStream->time_base.den,
+                 1, 1, (int)frameRate, 1);
 
         auto status = avfilter_graph_create_filter(&bufferSrcCtx, bufferSrc, "in", args, nullptr, filterGraph);
         assert(status >= 0);

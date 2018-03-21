@@ -2,13 +2,14 @@
 
 namespace LIRS {
 
-    Transcoder *Transcoder::newInstance(std::string sourceUrl, std::string shortDevName, size_t frameWidth,
-                                        size_t frameHeight, std::string rawPixelFormatStr,
-                                        std::string encoderPixelFormatStr, size_t frameRate, size_t outputFrameRate) {
+    Transcoder *Transcoder::newInstance(const std::string &sourceUrl, const std::string &devAlias,
+                                        size_t frameWidth, size_t frameHeight, const std::string &rawPixelFormatStr,
+                                        const std::string &encoderPixelFormatStr, size_t frameRate, size_t frameStep,
+                                        size_t outputFrameRate) {
 
         // create new instance
-        return new Transcoder(sourceUrl, shortDevName, frameWidth, frameHeight, rawPixelFormatStr,
-                              encoderPixelFormatStr, frameRate, outputFrameRate);
+        return new Transcoder(sourceUrl, devAlias, frameWidth, frameHeight, rawPixelFormatStr, encoderPixelFormatStr,
+                              frameRate, frameStep, outputFrameRate);
     }
 
     Transcoder::~Transcoder() {
@@ -32,6 +33,7 @@ namespace LIRS {
         // cleanup frames for decoding and encoding
         av_frame_free(&rawFrame);
         av_frame_free(&convertedFrame);
+        av_frame_free(&filterFrame);
 
         // cleanup decoder and encoder codec contexts
         avcodec_free_context(&decoderContext.codecContext);
@@ -48,21 +50,10 @@ namespace LIRS {
         decoderContext = {};
         encoderContext = {};
 
-        videoSourceUrl.clear();
-        frameWidth = 0;
-        frameHeight = 0;
-        rawPixFormat = AV_PIX_FMT_NONE;
-        encoderPixFormat = AV_PIX_FMT_NONE;
-        frameRate = 0;
-        outputFrameRate = 0;
-        sourceBitRate = 0;
-
         LOG(INFO) << "Transcoder has been destructed";
     }
 
     void Transcoder::run() {
-
-        auto filterFrame = av_frame_alloc();
 
         // set the playing flag
         isPlayingFlag.store(true);
@@ -94,8 +85,10 @@ namespace LIRS {
                         av_frame_make_writable(convertedFrame);
 
                         // convert raw frame into another pixel format and store it in convertedFrame
-                        auto h_out = sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(filterFrame->data),
-                                               filterFrame->linesize, 0, static_cast<int>(frameHeight), convertedFrame->data,
+                        auto h_out = sws_scale(converterContext,
+                                               reinterpret_cast<const uint8_t *const *>(filterFrame->data),
+                                               filterFrame->linesize, 0, static_cast<int>(frameHeight),
+                                               convertedFrame->data,
                                                convertedFrame->linesize);
 
                         assert(h_out != 0);
@@ -115,7 +108,7 @@ namespace LIRS {
 
                             // add encoded data to the outgoing queue truncating first NALU start code 4 bytes
                             outQueue.emplace(std::vector<uint8_t>(encodingPacket->data + H264_START_CODE_BYTES_NUMBER,
-                                                               encodingPacket->data + encodingPacket->size));
+                                                                  encodingPacket->data + encodingPacket->size));
 
                             outQueueMutex.unlock();
 
@@ -138,12 +131,7 @@ namespace LIRS {
 
         // capturing from the device is unavailable
         isPlayingFlag.store(false);
-
-        av_frame_free(&filterFrame);
     }
-
-
-
 
     bool Transcoder::retrieveEncodedData(std::vector<uint8_t> &data) {
 
@@ -165,14 +153,14 @@ namespace LIRS {
         return false;
     }
 
-    Transcoder::Transcoder(std::string url, std::string shortDevName, size_t w, size_t h, std::string rawPixFmtStr,
-                           std::string encPixFmtStr, size_t frameRate, size_t outFrameRate)
-            : videoSourceUrl(std::move(url)), shortDeviceName(std::move(shortDevName)),
-              frameWidth(w), frameHeight(h), frameRate(frameRate), outputFrameRate(outFrameRate),
-              sourceBitRate(0), decoderContext({}), encoderContext({}),
-              rawFrame(nullptr), convertedFrame(nullptr), decodingPacket(nullptr), encodingPacket(nullptr),
-              converterContext(nullptr), isPlayingFlag(false),
-              filterGraph(nullptr), bufferSrcCtx(nullptr), bufferSinkCtx(nullptr) {
+    Transcoder::Transcoder(const std::string &url, const std::string &alias, size_t w, size_t h,
+                           const std::string &rawPixFmtStr, const std::string &encPixFmtStr,
+                           size_t frameRate, size_t frameStep, size_t outFrameRate)
+            : videoSourceUrl(url), deviceAlias(alias), frameWidth(w), frameHeight(h), frameRate(frameRate),
+              frameStep(frameStep), outputFrameRate(outFrameRate), sourceBitRate(0), decoderContext({}),
+              encoderContext({}), rawFrame(nullptr), convertedFrame(nullptr), filterFrame(nullptr),
+              decodingPacket(nullptr), encodingPacket(nullptr), converterContext(nullptr), filterGraph(nullptr),
+              bufferSrcCtx(nullptr), bufferSinkCtx(nullptr), isPlayingFlag(false) {
 
         LOG(INFO) << "Constructing transcoder for \"" << videoSourceUrl << "\"";
 
@@ -180,15 +168,12 @@ namespace LIRS {
         this->rawPixFormat = av_get_pix_fmt(rawPixFmtStr.c_str());
         this->encoderPixFormat = av_get_pix_fmt(encPixFmtStr.c_str());
 
-        // todo throw exception or smth else
         assert(rawPixFormat != AV_PIX_FMT_NONE && encoderPixFormat != AV_PIX_FMT_NONE);
 
         LOG(INFO) << "Decoder/encoder pixel formats: " << rawPixFmtStr << " and " << encPixFmtStr;
 
         // register ffmpeg codecs, etc.
         registerAll();
-
-        // initialize decoder and encoder stuff
 
         initializeDecoder();
 
@@ -262,6 +247,11 @@ namespace LIRS {
         rawPixFormat = decoderContext.codecContext->pix_fmt;
         sourceBitRate = static_cast<size_t>(decoderContext.codecContext->bit_rate);
 
+        decodingPacket = av_packet_alloc();
+        av_init_packet(decodingPacket);
+
+        rawFrame = av_frame_alloc();
+
         LOG(INFO) << "Decoder for \"" << videoSourceUrl << "\" has been created (fps: "
                   << frameRate << ", width x height: " << frameWidth << "x" << frameHeight << ")";
     }
@@ -328,6 +318,70 @@ namespace LIRS {
 
         // report info to the console
         av_dump_format(encoderContext.formatContext, encoderContext.videoStream->index, "null", 1);
+
+        encodingPacket = av_packet_alloc();
+        av_init_packet(encodingPacket);
+    }
+
+    void Transcoder::initializeConverter() {
+
+        // allocate frame to be used in converter manually allocating buffer
+        convertedFrame = av_frame_alloc();
+        convertedFrame->width = static_cast<int>(frameWidth);
+        convertedFrame->height = static_cast<int>(frameHeight);
+        convertedFrame->format = encoderPixFormat;
+        auto statCode = av_frame_get_buffer(convertedFrame, 0);
+        assert(statCode == 0);
+
+        // create converter from raw pixel format to encoder supported pixel format
+        converterContext = sws_getCachedContext(nullptr, static_cast<int>(frameWidth),
+                                                static_cast<int>(frameHeight), rawPixFormat,
+                                                static_cast<int>(frameWidth), static_cast<int>(frameHeight),
+                                                encoderPixFormat, SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
+
+        LOG(INFO) << "Pixel format converter for \"" << videoSourceUrl << "\" has been created ("
+                  << av_get_pix_fmt_name(rawPixFormat) << " -> " << av_get_pix_fmt_name(encoderPixFormat) << ")";
+
+    }
+
+    void Transcoder::initFilters() {
+
+        filterFrame = av_frame_alloc();
+
+        auto bufferSrc = avfilter_get_by_name("buffer");
+        auto bufferSink = avfilter_get_by_name("buffersink");
+
+        auto outputs = avfilter_inout_alloc();
+        auto inputs = avfilter_inout_alloc();
+
+        filterGraph = avfilter_graph_alloc();
+
+        char args[64];
+        snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d",
+                 (int) frameWidth, (int) frameHeight, rawPixFormat,
+                 decoderContext.videoStream->time_base.num, decoderContext.videoStream->time_base.den, 1, 1);
+
+        auto status = avfilter_graph_create_filter(&bufferSrcCtx, bufferSrc, "in", args, nullptr, filterGraph);
+        assert(status >= 0);
+
+        status = avfilter_graph_create_filter(&bufferSinkCtx, bufferSink, "out", nullptr, nullptr, filterGraph);
+        assert(status >= 0);
+
+        outputs->name = av_strdup("in");
+        outputs->filter_ctx = bufferSrcCtx;
+        outputs->pad_idx = 0;
+        outputs->next = nullptr;
+
+        inputs->name = av_strdup("out");
+        inputs->filter_ctx = bufferSinkCtx;
+        inputs->pad_idx = 0;
+        inputs->next = nullptr;
+
+        status = avfilter_graph_parse(filterGraph, "framestep=step=5", inputs, outputs, nullptr);
+        assert(status >= 0);
+
+        status = avfilter_graph_config(filterGraph, nullptr);
+        assert(status >= 0);
     }
 
     int Transcoder::decode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
@@ -379,85 +433,11 @@ namespace LIRS {
         return statCode;
     }
 
-    void Transcoder::initializeConverter() {
-
-        // allocate packets for the encoder and decoder
-
-        decodingPacket = av_packet_alloc();
-        av_init_packet(decodingPacket);
-
-        encodingPacket = av_packet_alloc();
-        av_init_packet(encodingPacket);
-
-        // allocate raw frame
-        rawFrame = av_frame_alloc();
-
-        // allocate frame to be used in converter manually allocating buffer
-        convertedFrame = av_frame_alloc();
-        convertedFrame->width = static_cast<int>(frameWidth);
-        convertedFrame->height = static_cast<int>(frameHeight);
-        convertedFrame->format = encoderPixFormat;
-        auto statCode = av_frame_get_buffer(convertedFrame, 0);
-        assert(statCode == 0);
-
-        // create converter from raw pixel format to encoder supported pixel format
-        converterContext = sws_getCachedContext(nullptr, static_cast<int>(frameWidth),
-                                                static_cast<int>(frameHeight), rawPixFormat,
-                                                static_cast<int>(frameWidth), static_cast<int>(frameHeight),
-                                                encoderPixFormat, SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
-
-        LOG(INFO) << "Pixel format converter for \"" << videoSourceUrl << "\" has been created ("
-                  << av_get_pix_fmt_name(rawPixFormat) << " -> " << av_get_pix_fmt_name(encoderPixFormat) << ")";
-
-    }
-
     std::string Transcoder::getDeviceName() const {
         return videoSourceUrl;
     }
 
     std::string Transcoder::getAlias() const {
-        return shortDeviceName;
+        return deviceAlias;
     }
-
-    void Transcoder::initFilters() {
-
-        auto bufferSrc = avfilter_get_by_name("buffer");
-        auto bufferSink = avfilter_get_by_name("buffersink");
-
-        auto outputs = avfilter_inout_alloc();
-        auto inputs = avfilter_inout_alloc();
-
-        filterGraph = avfilter_graph_alloc();
-
-        char args[64];
-        snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d",
-                 (int)frameWidth, (int)frameHeight, rawPixFormat,
-                 decoderContext.videoStream->time_base.num, decoderContext.videoStream->time_base.den, 1, 1);
-
-        auto status = avfilter_graph_create_filter(&bufferSrcCtx, bufferSrc, "in", args, nullptr, filterGraph);
-        assert(status >= 0);
-
-        status = avfilter_graph_create_filter(&bufferSinkCtx, bufferSink, "out", nullptr, nullptr, filterGraph);
-        assert(status >= 0);
-
-        outputs->name = av_strdup("in");
-        outputs->filter_ctx = bufferSrcCtx;
-        outputs->pad_idx = 0;
-        outputs->next = nullptr;
-
-        inputs->name = av_strdup("out");
-        inputs->filter_ctx = bufferSinkCtx;
-        inputs->pad_idx = 0;
-        inputs->next = nullptr;
-
-        // fps=fps=4
-        // framestep=step=5
-//        char[]
-        status = avfilter_graph_parse(filterGraph, "framestep=step=5", inputs, outputs, nullptr);
-        assert(status >= 0);
-
-        status = avfilter_graph_config(filterGraph, nullptr);
-        assert(status >= 0);
-    }
-
 }

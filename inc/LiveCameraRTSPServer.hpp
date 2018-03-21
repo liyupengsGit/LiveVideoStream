@@ -35,7 +35,7 @@ namespace LIRS {
                 if (src) Medium::close(src);
             }
 
-            auto st = env->reclaim();
+            env->reclaim();
 
             delete scheduler;
 

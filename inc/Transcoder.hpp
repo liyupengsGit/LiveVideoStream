@@ -72,19 +72,20 @@ namespace LIRS {
          * Creates new instance of this class.
          *
          * @param sourceUrl - video source path/url, e.g. /dev/video0, /dev/video1.
-         * @param shortDevName - alias name for the device (optional).
+         * @param devAlias - alias name for the device (optional).
          * @param frameWidth - width of the frame used for decoding and encoding process (could be changed if not supported).
          * @param frameHeight - height of the frame used for decoding and encoding process (could be changed if not supported).
-         * @param rawPixelFormatStr - pixel format of the raw video data from the camera, e.g. 'yuyv422', 'bayer_grbg8' (could be changed if not supported).
+         * @param rawPixelFormatStr - pixel format of the raw video data, e.g. 'yuyv422' (could be changed if not supported).
          * @param encoderPixelFormatStr - pixel format of the encoded data (see supported pixel formats for libx264).
          * @param frameRate - hardware's framerate (could be changed if not supported by the device).
+         * @param frameStep - how many frames to skip to decrease output framerate.
          * @param outputFrameRate - desired framerate (used to decrease device's framerate).
          * @return pointer to the created instance of the transcoder class.
          */
         static Transcoder *
-        newInstance(std::string sourceUrl, std::string shortDevName, size_t frameWidth, size_t frameHeight,
-                    std::string rawPixelFormatStr, std::string encoderPixelFormatStr,
-                    size_t frameRate, size_t outputFrameRate);
+        newInstance(const std::string &sourceUrl, const std::string &devAlias, size_t frameWidth, size_t frameHeight,
+                    const std::string &rawPixelFormatStr, const std::string &encoderPixelFormatStr,
+                    size_t frameRate, size_t frameStep, size_t outputFrameRate);
 
         /**
          * Prohibit copy constructor.
@@ -103,6 +104,9 @@ namespace LIRS {
          */
         ~Transcoder();
 
+        /**
+         * Starts the process of decoding / encoding data from the video source.
+         */
         void run();
 
         /**
@@ -128,7 +132,7 @@ namespace LIRS {
         std::string getDeviceName() const;
 
         /**
-         * Returns the device alias, e.g. frontCamera.
+         * Returns the device alias, e.g. 'frontCamera'.
          *
          * @return device alias.
          */
@@ -139,32 +143,33 @@ namespace LIRS {
         /**
          * Constructs new instance of the transcoder class.
          * Used internally (private).
-         * In order to create an instance use newInstance function instead.
+         * In order to create an instance use 'newInstance' function instead.
          *
          * @param url - video source url/path, e.g. /dev/video0
-         * @param shortDevName - device alias name (optional).
+         * @param alias - device alias name (optional).
          * @param w - frame width (could be changed if not supported).
          * @param h - frame height (could be changed if not supported).
          * @param rawPixFmtStr - raw video data pixel format, e.g. 'yuyv422', 'bayer_grbg8' (could be changed if not supported).
          * @param encPixFmtStr - encoded video data pixel format (see libx264 supported pixel formats).
          * @param frameRate - device's supported framerate (could be changed by device if not supported).
+         * @param frameStep - how many frames to skip (used for decreasing framerate).
          * @param outFrameRate - the desired framerate (used to decrease supported framerate).
-         * @param outBitRate - encoder's bitrate (see libx264, -b flag).
          */
-        Transcoder(std::string url, std::string shortDevName, size_t w, size_t h, std::string rawPixFmtStr,
-                   std::string encPixFmtStr, size_t frameRate, size_t outFrameRate);
+        Transcoder(const std::string &url, const std::string &alias, size_t w, size_t h,
+                   const std::string &rawPixFmtStr, const std::string &encPixFmtStr, size_t frameRate,
+                   size_t frameStep, size_t outFrameRate);
 
         /* parameters */
 
         /**
          * Video source url/path, e.g. /dev/video0.
          */
-        std::string videoSourceUrl;
+        const std::string videoSourceUrl;
 
         /**
          * Device name alias.
          */
-        std::string shortDeviceName;
+        std::string deviceAlias;
 
         /**
          * Frame width.
@@ -190,6 +195,11 @@ namespace LIRS {
          * Device's supported framerate.
          */
         size_t frameRate;
+
+        /**
+         * Number of frames to skip when encoding.
+         */
+        size_t frameStep;
 
         /**
          * Desired framerate.
@@ -225,6 +235,11 @@ namespace LIRS {
         AVFrame *convertedFrame;
 
         /**
+         * Frame retrieved from the filter.
+         */
+        AVFrame *filterFrame;
+
+        /**
          * Packet sent to the decoder in order to receive raw frame.
          */
         AVPacket *decodingPacket;
@@ -252,15 +267,24 @@ namespace LIRS {
         std::queue<std::vector<uint8_t>> outQueue;
 
         /**
+         * Filter graph used to create complex filter chains.
+         */
+        AVFilterGraph *filterGraph;
+
+        /**
+         * Filter context for buffer source.
+         */
+        AVFilterContext *bufferSrcCtx;
+
+        /**
+         * Filter context for buffer sink.
+         */
+        AVFilterContext *bufferSinkCtx;
+
+        /**
          * Flag indicating whether the device is accessible or not.
          */
         std::atomic_bool isPlayingFlag;
-
-        AVFilterGraph* filterGraph;
-
-        AVFilterContext* bufferSrcCtx;
-
-        AVFilterContext* bufferSinkCtx;
 
         /**
          * Callback function called when new encoded video data is available.
@@ -295,6 +319,16 @@ namespace LIRS {
         void initializeEncoder();
 
         /**
+         * Initializes converter from raw pixel format to the encoder supported pixel format.
+         */
+        void initializeConverter();
+
+        /**
+         * Initializes filters, e.g. 'framestep=step=3'
+         */
+        void initFilters();
+
+        /**
          * Captures raw video frame from the device.
          *
          * @param codecContext - codec context (for decoding).
@@ -314,12 +348,6 @@ namespace LIRS {
          */
         int encode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet);
 
-        /**
-         * Initializes converter from raw pixel format to the encoder supported pixel format.
-         */
-        void initializeConverter();
-
-        void initFilters();
     };
 }
 

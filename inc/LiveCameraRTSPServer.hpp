@@ -101,7 +101,7 @@ namespace LIRS {
     private:
 
         /**
-         * RTPS port number.
+         * RTSP port number.
          */
         unsigned int rtspPort;
 

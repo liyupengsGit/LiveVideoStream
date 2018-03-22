@@ -284,11 +284,12 @@ namespace LIRS {
 
         LOG(WARN) << "Output fps: " << outputFrameRate;
 
-        encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(5)};
-        encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(5), 1};
+        encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(outputFrameRate)};
+        encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(outputFrameRate), 1};
 
         // set encoder's pixel format (most of the players support yuv420p)
         encoderContext.codecContext->pix_fmt = encoderPixFormat;
+
 
         if (encoderContext.formatContext->flags & AVFMT_GLOBALHEADER) {
             encoderContext.codecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;

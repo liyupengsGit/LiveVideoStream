@@ -114,7 +114,7 @@ namespace LIRS {
          *
          * @param callback - callback function to be set to.
          */
-        void setOnEncodedDataCallback(std::function<void(std::vector<uint8_t>&&)> callback);
+        void setOnEncodedDataCallback(std::function<void(std::vector<uint8_t> &&)> callback);
 
         /**
          * Returns device url/path, e.g. /dev/video0.
@@ -270,7 +270,7 @@ namespace LIRS {
         /**
          * Callback function called when new encoded video data is available.
          */
-        std::function<void(std::vector<uint8_t>&&)> onEncodedDataCallback;
+        std::function<void(std::vector<uint8_t> &&)> onEncodedDataCallback;
 
         /** constants **/
 

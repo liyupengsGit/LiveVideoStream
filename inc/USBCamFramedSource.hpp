@@ -49,7 +49,7 @@ namespace LIRS {
         /**
          * Function to be called when the video source has a new available encoded data.
          */
-        void onEncodedData(std::vector<uint8_t>&& data);
+        void onEncodedData(std::vector<uint8_t> &&data);
 
         void deliverData();
 

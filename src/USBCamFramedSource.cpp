@@ -25,7 +25,8 @@ namespace LIRS {
         eventTriggerId = envir().taskScheduler().createEventTrigger(USBCamFramedSource::deliverFrame0);
 
         // set transcoder's callback indicating new encoded data availability to the onEncodedData function
-        transcoder->setOnEncodedDataCallback(std::bind(&USBCamFramedSource::onEncodedData, this, std::placeholders::_1));
+        transcoder->setOnEncodedDataCallback(
+                std::bind(&USBCamFramedSource::onEncodedData, this, std::placeholders::_1));
 
         // start video data encoding and decoding
 
@@ -37,17 +38,15 @@ namespace LIRS {
 //    void USBCamFramedSource::doGetNextFrame() {}
 
 
-    void USBCamFramedSource::onEncodedData(std::vector<uint8_t> && newData) {
+    void USBCamFramedSource::onEncodedData(std::vector<uint8_t> &&newData) {
 
         if (!isCurrentlyAwaitingData()) return;
 
-        if (encodedData.size() > 5) {
+        if (encodedData.size() >= 5) {
             encodedData.clear();
         }
 
         encodedData.emplace_back(std::move(newData));
-
-        LOG(WARN) << "queue size: " << encodedData.size();
 
         // publish an event to be handled by the event loop
         envir().taskScheduler().triggerEvent(eventTriggerId, this);
@@ -68,10 +67,7 @@ namespace LIRS {
             return; // there's no consumers (clients)
         }
 
-        LOG(WARN) << R"("DoGetNextFrame")";
-
         if (encodedData.empty()) {
-            LOG(WARN) << R"("Queue is empty")";
             return;
         }
 

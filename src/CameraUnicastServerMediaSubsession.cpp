@@ -10,8 +10,7 @@ namespace LIRS {
 
     CameraUnicastServerMediaSubsession::CameraUnicastServerMediaSubsession(UsageEnvironment &env,
                                                                            StreamReplicator *replicator)
-            : OnDemandServerMediaSubsession(env, False), replicator(replicator) {
-    }
+            : OnDemandServerMediaSubsession(env, False), replicator(replicator) {}
 
     FramedSource *
     CameraUnicastServerMediaSubsession::createNewStreamSource(unsigned clientSessionId, unsigned &estBitrate) {
@@ -26,11 +25,9 @@ namespace LIRS {
 
     RTPSink *
     CameraUnicastServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
-                                                         FramedSource *inputSource) {
-        
+                                                         FramedSource * /*inputSource*/) {
         return H265VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic);
     }
-
 
 
 }

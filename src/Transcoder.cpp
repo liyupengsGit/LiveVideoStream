@@ -284,8 +284,8 @@ namespace LIRS {
 
         LOG(WARN) << "Output fps: " << outputFrameRate;
 
-        encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(frameRate)};
-        encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(frameRate), 1};
+        encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(5)};
+        encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(5), 1};
 
         // set encoder's pixel format (most of the players support yuv420p)
         encoderContext.codecContext->pix_fmt = encoderPixFormat;
@@ -300,16 +300,16 @@ namespace LIRS {
         AVDictionary *options = nullptr;
 
         // the faster you get, the less compression is achieved
-        av_dict_set(&options, "preset", "veryfast", 0);
+        av_dict_set(&options, "preset", "ultrafast", 0);
 
         // optimization for fast encoding and low latency streaming (see x264 docs for more info)
         av_dict_set(&options, "tune", "zerolatency", 0);
 
         // constant rate factor
-        av_dict_set_int(&options, "crf", 30, 0); // 21, 22 and 23 are acceptable
+        av_dict_set_int(&options, "crf", 32, 0);
 
         // set additional x264 options
-        av_opt_set(encoderContext.codecContext->priv_data, "x265opts", "slice-max-size=1500:intra-refresh=1", 0);
+        av_opt_set(encoderContext.codecContext->priv_data, "x265-params", "slices=1:intra-refresh=0", 0);
 
         // open the output format to use given codec
         statCode = avcodec_open2(encoderContext.codecContext, encoderContext.codec, &options);

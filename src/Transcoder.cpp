@@ -69,7 +69,6 @@ namespace LIRS {
 
                     // push frames to the buffer
                     auto statusCode = av_buffersrc_add_frame_flags(bufferSrcCtx, rawFrame, AV_BUFFERSRC_FLAG_KEEP_REF);
-//                    assert(statusCode >= 0);
 
                     if (statusCode < 0) continue; // workaround
 
@@ -92,8 +91,6 @@ namespace LIRS {
                                                filterFrame->linesize, 0, static_cast<int>(frameHeight),
                                                convertedFrame->data,
                                                convertedFrame->linesize);
-
-                        assert(h_out != 0);
 
                         // copy pts/dts, etc. (see ffmpeg docs)
                         av_frame_copy_props(convertedFrame, filterFrame);

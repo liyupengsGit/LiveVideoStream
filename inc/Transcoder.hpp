@@ -297,7 +297,7 @@ namespace LIRS {
          * H.264 start code bytes number (first 4 bytes).
          * Used to truncate start codes from the encoded data.
          */
-        const static unsigned int H264_START_CODE_BYTES_NUMBER = 4;
+        const static unsigned int START_CODE_BYTES_NUMBER = 4;
 
         /* Methods */
 

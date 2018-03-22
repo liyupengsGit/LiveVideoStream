@@ -109,7 +109,7 @@ namespace LIRS {
                             outQueueMutex.lock();
 
                             // add encoded data to the outgoing queue truncating first NALU start code 4 bytes
-                            outQueue.emplace(std::vector<uint8_t>(encodingPacket->data + H264_START_CODE_BYTES_NUMBER,
+                            outQueue.emplace(std::vector<uint8_t>(encodingPacket->data + START_CODE_BYTES_NUMBER,
                                                                   encodingPacket->data + encodingPacket->size));
 
                             outQueueMutex.unlock();

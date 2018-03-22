@@ -27,9 +27,7 @@ namespace LIRS {
     RTPSink *
     CameraUnicastServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
                                                          FramedSource *inputSource) {
-
-        LOG(INFO) << "Create new RTP sink";
-
+        
         return H265VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic);
     }
 

@@ -58,40 +58,34 @@ namespace LIRS {
         // set the playing flag
         isPlayingFlag.store(true);
 
+        long long skipIndex = 1;
+
         // read raw data from the device into the packet
         while (isPlayingFlag.load() && av_read_frame(decoderContext.formatContext, decodingPacket) == 0) {
 
             // check whether it is a video stream's data
             if (decodingPacket->stream_index == decoderContext.videoStream->index) {
 
+                // encode every third
+                if (skipIndex % 4) {
+                    skipIndex++;
+                    continue;
+                }
+
+                skipIndex++;
+
                 // fill raw frame with data from decoded packet
                 if (decode(decoderContext.codecContext, rawFrame, decodingPacket)) {
-
-                    // push frames to the buffer
-                    auto statusCode = av_buffersrc_add_frame_flags(bufferSrcCtx, rawFrame, AV_BUFFERSRC_FLAG_KEEP_REF);
-
-                    if (statusCode < 0) continue; // workaround
-
-                    // pull frames from filter graph
-                    while (true) {
-
-                        statusCode = av_buffersink_get_frame(bufferSinkCtx, filterFrame);
-
-                        if (statusCode == AVERROR(EAGAIN) || statusCode == AVERROR_EOF) {
-                            break;
-                        }
-
-                        assert(statusCode >= 0);
 
                         av_frame_make_writable(convertedFrame);
 
                         // convert raw frame into another pixel format and store it in convertedFrame
-                        sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(filterFrame->data),
-                                               filterFrame->linesize, 0, static_cast<int>(frameHeight),
+                        sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(rawFrame->data),
+                                               rawFrame->linesize, 0, static_cast<int>(frameHeight),
                                                convertedFrame->data, convertedFrame->linesize);
 
                         // copy pts/dts, etc. (see ffmpeg docs)
-                        av_frame_copy_props(convertedFrame, filterFrame);
+                        av_frame_copy_props(convertedFrame, rawFrame);
 
                         if (encode(encoderContext.codecContext, convertedFrame, encodingPacket) >= 0) {
 
@@ -108,9 +102,6 @@ namespace LIRS {
                         }
 
                         av_packet_unref(encodingPacket);
-                    }
-
-                    av_frame_unref(filterFrame);
                 }
             }
 

@@ -5,7 +5,7 @@
 #include <BasicUsageEnvironment.hh>
 #include <GroupsockHelper.hh>
 #include <liveMedia.hh>
-#include "H264FramedSource.hpp"
+#include "USBCamFramedSource.hpp"
 #include "CameraUnicastServerMediaSubsession.hpp"
 
 namespace LIRS {
@@ -153,7 +153,7 @@ namespace LIRS {
         void addMediaSession(Transcoder *transcoder, const std::string &streamName, const std::string &streamDesc) {
 
             // create framed source based on transcoder
-            auto framedSource = H264FramedSource::createNew(*env, transcoder);
+            auto framedSource = USBCamFramedSource::createNew(*env, transcoder);
 
             allocatedVideoSources.push_back(framedSource);
 

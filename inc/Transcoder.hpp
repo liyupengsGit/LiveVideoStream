@@ -110,19 +110,11 @@ namespace LIRS {
         void run();
 
         /**
-         * Retrieves encoded data from the internal buffer.
-         *
-         * @param frame - reference to video data to be filled.
-         * @return true - if there is some data in the buffer, otherwise - false.
-         */
-        bool retrieveEncodedData(std::vector<uint8_t> &frame);
-
-        /**
          * Sets callback function which indicates that a new encoded video data is available.
          *
          * @param callback - callback function to be set to.
          */
-        void setOnEncodedDataCallback(std::function<void()> callback);
+        void setOnEncodedDataCallback(std::function<void(std::vector<uint8_t>&&)> callback);
 
         /**
          * Returns device url/path, e.g. /dev/video0.
@@ -256,17 +248,6 @@ namespace LIRS {
         SwsContext *converterContext;
 
         /**
-         * Mutex used to give concurrent access to the queue holding arriving encoded data from the encoder.
-         */
-        std::mutex outQueueMutex;
-
-        /**
-         * Queue used to hold encoded data from the encoder.
-         * Encoded data is retrieved from this queue by the consumer.
-         */
-        std::queue<std::vector<uint8_t>> outQueue;
-
-        /**
          * Filter graph used to create complex filter chains.
          */
         AVFilterGraph *filterGraph;
@@ -289,7 +270,7 @@ namespace LIRS {
         /**
          * Callback function called when new encoded video data is available.
          */
-        std::function<void()> onEncodedDataCallback;
+        std::function<void(std::vector<uint8_t>&&)> onEncodedDataCallback;
 
         /** constants **/
 

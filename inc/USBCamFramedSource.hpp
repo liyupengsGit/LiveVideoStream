@@ -4,16 +4,17 @@
 #include <FramedSource.hh>
 #include <UsageEnvironment.hh>
 #include <Transcoder.hpp>
+#include <list>
 
 namespace LIRS {
 
     /**
      * Implementation of the source in Live555 framework.
      */
-    class H264FramedSource : public FramedSource {
+    class USBCamFramedSource : public FramedSource {
     public:
 
-        static H264FramedSource *createNew(UsageEnvironment &env, Transcoder *transcoder);
+        static USBCamFramedSource *createNew(UsageEnvironment &env, Transcoder *transcoder);
 
     protected:
 
@@ -23,16 +24,18 @@ namespace LIRS {
          * @param env - environment (see Live555 docs).
          * @param transcoder - pointer to the transcoder providing encoded data.
          */
-        H264FramedSource(UsageEnvironment &env, Transcoder *transcoder);
+        USBCamFramedSource(UsageEnvironment &env, Transcoder *transcoder);
 
-        ~H264FramedSource() override;
+        ~USBCamFramedSource() override;
 
         void doGetNextFrame() override;
+
+        void doStopGettingFrames() override;
 
     private:
 
         /**
-         * Provides H.264 encoded data from the video device it represents.
+         * Provides encoded data from the video device it represents.
          */
         Transcoder *transcoder;
 
@@ -41,23 +44,16 @@ namespace LIRS {
          */
         EventTriggerId eventTriggerId;
 
-        /**
-         * Holds encoded data.
-         */
-        std::vector<uint8_t> frame;
-
-        /**
-         * Fills all necessary fields in order to successfully transmit data over network.
-         */
-        void deliverFrame();
+        std::vector<std::vector<uint8_t>> encodedData;
 
         /**
          * Function to be called when the video source has a new available encoded data.
          */
-        void onEncodedData();
+        void onEncodedData(std::vector<uint8_t>&& data);
 
-        static void deliverFrame0(void *p);
+        void deliverData();
 
+        static void deliverFrame0(void *);
     };
 
 }

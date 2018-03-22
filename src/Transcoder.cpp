@@ -86,11 +86,9 @@ namespace LIRS {
                         av_frame_make_writable(convertedFrame);
 
                         // convert raw frame into another pixel format and store it in convertedFrame
-                        auto h_out = sws_scale(converterContext,
-                                               reinterpret_cast<const uint8_t *const *>(filterFrame->data),
+                        sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(filterFrame->data),
                                                filterFrame->linesize, 0, static_cast<int>(frameHeight),
-                                               convertedFrame->data,
-                                               convertedFrame->linesize);
+                                               convertedFrame->data, convertedFrame->linesize);
 
                         // copy pts/dts, etc. (see ffmpeg docs)
                         av_frame_copy_props(convertedFrame, filterFrame);
@@ -102,23 +100,14 @@ namespace LIRS {
                                                  encoderContext.videoStream->time_base);
                             */
 
-                            // lock access to the encoded data queue
-                            outQueueMutex.lock();
-
-                            // add encoded data to the outgoing queue truncating first NALU start code 4 bytes
-                            outQueue.emplace(std::vector<uint8_t>(encodingPacket->data + START_CODE_BYTES_NUMBER,
-                                                                  encodingPacket->data + encodingPacket->size));
-
-                            outQueueMutex.unlock();
-
                             // invoke the callback indicating that a new encoded data is available
                             if (onEncodedDataCallback) {
-                                onEncodedDataCallback();
+                                onEncodedDataCallback(std::vector<uint8_t>(encodingPacket->data + START_CODE_BYTES_NUMBER,
+                                                                           encodingPacket->data + encodingPacket->size));
                             }
                         }
 
                         av_packet_unref(encodingPacket);
-
                     }
 
                     av_frame_unref(filterFrame);
@@ -132,25 +121,6 @@ namespace LIRS {
         isPlayingFlag.store(false);
     }
 
-    bool Transcoder::retrieveEncodedData(std::vector<uint8_t> &data) {
-
-        if (!outQueue.empty()) {
-
-            // lock access to the queue
-            outQueueMutex.lock();
-
-            // retrieve encoded data from the queue
-            data = outQueue.front();
-            outQueue.pop();
-
-            outQueueMutex.unlock();
-
-            return true;
-        }
-
-        // no data is available
-        return false;
-    }
 
     Transcoder::Transcoder(const std::string &url, const std::string &alias, size_t w, size_t h,
                            const std::string &rawPixFmtStr, const std::string &encPixFmtStr,
@@ -171,7 +141,6 @@ namespace LIRS {
 
         LOG(INFO) << "Decoder/encoder pixel formats: " << rawPixFmtStr << " and " << encPixFmtStr;
 
-        // register ffmpeg codecs, etc.
         registerAll();
 
         initializeDecoder();
@@ -183,7 +152,7 @@ namespace LIRS {
         initFilters();
     }
 
-    void Transcoder::setOnEncodedDataCallback(std::function<void()> callback) {
+    void Transcoder::setOnEncodedDataCallback(std::function<void(std::vector<uint8_t>&&)> callback) {
         onEncodedDataCallback = std::move(callback);
     }
 
@@ -279,8 +248,6 @@ namespace LIRS {
 
         encoderContext.codecContext->profile = FF_PROFILE_H264_BASELINE;
 
-        LOG(WARN) << "Output fps: " << outputFrameRate;
-
         encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(outputFrameRate)};
         encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(outputFrameRate), 1};
 
@@ -307,7 +274,7 @@ namespace LIRS {
         av_dict_set_int(&options, "crf", 32, 0);
 
         // set additional x264 options
-        av_opt_set(encoderContext.codecContext->priv_data, "x265-params", "slices=1:intra-refresh=0", 0);
+        av_opt_set(encoderContext.codecContext->priv_data, "x265-params", "slices=2:intra-refresh=0", 0);
 
         // open the output format to use given codec
         statCode = avcodec_open2(encoderContext.codecContext, encoderContext.codec, &options);

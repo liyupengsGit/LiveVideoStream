@@ -14,6 +14,11 @@ int main(int argc, char **argv) {
     auto server = new LIRS::LiveCameraRTSPServer();
     server->addTranscoder(transcoder0);
 
+    std::thread([&](){
+        std::this_thread::sleep_for(std::chrono::seconds(10));
+        server->stopServer();
+    }).detach();
+
     server->run();
 
     delete server;

@@ -14,41 +14,7 @@ namespace LIRS {
 
     Transcoder::~Transcoder() {
 
-        isPlayingFlag.store(false);
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-
-        avfilter_graph_free(&filterGraph);
-
-        // close dummy file
-        avio_close(encoderContext.formatContext->pb);
-
-        // cleanup converter
-        sws_freeContext(converterContext);
-
-        // cleanup packets used for decoding and encoding
-        av_packet_free(&decodingPacket);
-        av_packet_free(&encodingPacket);
-
-        // cleanup frames for decoding and encoding
-        av_frame_free(&rawFrame);
-        av_frame_free(&convertedFrame);
-        av_frame_free(&filterFrame);
-
-        // cleanup decoder and encoder codec contexts
-        avcodec_free_context(&decoderContext.codecContext);
-        avcodec_free_context(&encoderContext.codecContext);
-
-        // close input format for the video device
-        avformat_close_input(&decoderContext.formatContext);
-
-        // cleanup decoder and encoder format contexts
-        avformat_free_context(decoderContext.formatContext);
-        avformat_free_context(encoderContext.formatContext);
-
-        // reset all class members
-        decoderContext = {};
-        encoderContext = {};
+        isPlayingFlag.store(false); // signal to run() to stop decoding/encoding frames
 
         LOG(INFO) << "Transcoder has been destructed";
     }
@@ -70,7 +36,7 @@ namespace LIRS {
                     // push frames to the buffer
                     auto statusCode = av_buffersrc_add_frame_flags(bufferSrcCtx, rawFrame, AV_BUFFERSRC_FLAG_KEEP_REF);
 
-                    if (statusCode < 0) continue; // workaround
+                    if (statusCode < 0) continue; // workaround for buggy cameras
 
                     // pull frames from filter graph
                     while (true) {
@@ -85,12 +51,12 @@ namespace LIRS {
 
                         av_frame_make_writable(convertedFrame);
 
-                        // convert raw frame into another pixel format and store it in convertedFrame
+                        // convert raw frame into another pixel format
                         sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(filterFrame->data),
-                                               filterFrame->linesize, 0, static_cast<int>(frameHeight),
-                                               convertedFrame->data, convertedFrame->linesize);
+                                  filterFrame->linesize, 0, static_cast<int>(frameHeight),
+                                  convertedFrame->data, convertedFrame->linesize);
 
-                        // copy pts/dts, etc. (see ffmpeg docs)
+                        // copy pts/dts, etc.
                         av_frame_copy_props(convertedFrame, filterFrame);
 
                         if (encode(encoderContext.codecContext, convertedFrame, encodingPacket) >= 0) {
@@ -102,8 +68,9 @@ namespace LIRS {
 
                             // invoke the callback indicating that a new encoded data is available
                             if (onEncodedDataCallback) {
-                                onEncodedDataCallback(std::vector<uint8_t>(encodingPacket->data + START_CODE_BYTES_NUMBER,
-                                                                           encodingPacket->data + encodingPacket->size));
+                                onEncodedDataCallback(
+                                        std::vector<uint8_t>(encodingPacket->data + START_CODE_BYTES_NUMBER,
+                                                             encodingPacket->data + encodingPacket->size));
                             }
                         }
 
@@ -119,6 +86,8 @@ namespace LIRS {
 
         // capturing from the device is unavailable
         isPlayingFlag.store(false);
+
+        cleanup(); // free memory, close handles, etc.
     }
 
 
@@ -152,7 +121,7 @@ namespace LIRS {
         initFilters();
     }
 
-    void Transcoder::setOnEncodedDataCallback(std::function<void(std::vector<uint8_t>&&)> callback) {
+    void Transcoder::setOnEncodedDataCallback(std::function<void(std::vector<uint8_t> &&)> callback) {
         onEncodedDataCallback = std::move(callback);
     }
 
@@ -328,7 +297,7 @@ namespace LIRS {
         char args[64];
         snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d:frame_rate=%d/%d", (int) frameWidth, (int) frameHeight,
                  rawPixFormat, decoderContext.videoStream->time_base.num, decoderContext.videoStream->time_base.den,
-                 1, 1, (int)frameRate, 1);
+                 1, 1, (int) frameRate, 1);
 
         auto status = avfilter_graph_create_filter(&bufferSrcCtx, bufferSrc, "in", args, nullptr, filterGraph);
         assert(status >= 0);
@@ -412,5 +381,40 @@ namespace LIRS {
 
     std::string Transcoder::getAlias() const {
         return deviceAlias;
+    }
+
+    void Transcoder::cleanup() {
+
+        avfilter_graph_free(&filterGraph);
+
+        // close dummy file
+        avio_close(encoderContext.formatContext->pb);
+
+        // cleanup converter
+        sws_freeContext(converterContext);
+
+        // cleanup packets used for decoding and encoding
+        av_packet_free(&decodingPacket);
+        av_packet_free(&encodingPacket);
+
+        // cleanup frames for decoding and encoding
+        av_frame_free(&rawFrame);
+        av_frame_free(&convertedFrame);
+        av_frame_free(&filterFrame);
+
+        // cleanup decoder and encoder codec contexts
+        avcodec_free_context(&decoderContext.codecContext);
+        avcodec_free_context(&encoderContext.codecContext);
+
+        // close input format for the video device
+        avformat_close_input(&decoderContext.formatContext);
+
+        // cleanup decoder and encoder format contexts
+        avformat_free_context(decoderContext.formatContext);
+        avformat_free_context(encoderContext.formatContext);
+
+        // reset all class members
+        decoderContext = {};
+        encoderContext = {};
     }
 }

@@ -17,6 +17,8 @@ namespace LIRS {
 
         LOG(INFO) << "Create new stream source for client: " << clientSessionId;
 
+        estBitrate = 300;
+
         auto source = replicator->createStreamReplica();
 
         // using stream discrete framer (because one unit of data is one NALU without start codes)

@@ -329,6 +329,11 @@ namespace LIRS {
          */
         int encode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet);
 
+        /**
+         * Close all resources, free allocated memory, etc.
+         */
+        void cleanup();
+
     };
 }
 

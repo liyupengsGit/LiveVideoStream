@@ -69,7 +69,7 @@ namespace LIRS {
                             // invoke the callback indicating that a new encoded data is available
                             if (onEncodedDataCallback) {
                                 onEncodedDataCallback(
-                                        std::vector<uint8_t>(encodingPacket->data + START_CODE_BYTES_NUMBER,
+                                        std::vector<uint8_t>(encodingPacket->data + NALU_START_CODE_BYTES_NUMBER,
                                                              encodingPacket->data + encodingPacket->size));
                             }
                         }
@@ -95,8 +95,8 @@ namespace LIRS {
                            const std::string &rawPixFmtStr, const std::string &encPixFmtStr,
                            size_t frameRate, size_t frameStep, size_t outFrameRate)
             : videoSourceUrl(url), deviceAlias(alias), frameWidth(w), frameHeight(h),
-              frameRate(AVRational{(int) frameRate, 1}),
-              frameStep(frameStep), outputFrameRate(AVRational{(int) outFrameRate, 1}), sourceBitRate(0),
+              frameRate(AVRational{(int) frameRate, 1}), frameStep(frameStep),
+              outputFrameRate(AVRational{(int) outFrameRate, 1}), sourceBitRate(0),
               decoderContext({}), encoderContext({}), rawFrame(nullptr), convertedFrame(nullptr), filterFrame(nullptr),
               decodingPacket(nullptr), encodingPacket(nullptr), converterContext(nullptr), filterGraph(nullptr),
               bufferSrcCtx(nullptr), bufferSinkCtx(nullptr), isPlayingFlag(false) {
@@ -164,7 +164,7 @@ namespace LIRS {
 
         // find video stream (if multiple video streams are available choose manually)
         int videoStreamIndex = av_find_best_stream(decoderContext.formatContext, AVMEDIA_TYPE_VIDEO, -1, -1,
-                                                    &decoderContext.codec, 0);
+                                                   &decoderContext.codec, 0);
         assert(videoStreamIndex >= 0);
         assert(decoderContext.codec);
         decoderContext.videoStream = decoderContext.formatContext->streams[videoStreamIndex];
@@ -247,14 +247,14 @@ namespace LIRS {
         av_dict_set_int(&options, "crf", 32, 0);
 
         // set additional codec options
-        av_opt_set(encoderContext.codecContext->priv_data, "x265-params", "slices=2:intra-refresh=0", 0);
+        av_opt_set(encoderContext.codecContext->priv_data, "x265-params", "slices=5:intra-refresh=0", 0);
 
         // open the output format to use given codec
         statCode = avcodec_open2(encoderContext.codecContext, encoderContext.codec, &options);
         av_dict_free(&options);
         assert(statCode == 0);
 
-        // initializes time base (see ffmpeg docs)
+        // initializes time base
         statCode = avformat_write_header(encoderContext.formatContext, nullptr);
         assert(statCode >= 0);
 

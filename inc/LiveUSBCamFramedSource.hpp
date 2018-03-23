@@ -1,5 +1,5 @@
-#ifndef LIVE_VIDEO_STREAM_H264_FRAMED_SOURCE_HPP
-#define LIVE_VIDEO_STREAM_H264_FRAMED_SOURCE_HPP
+#ifndef LIVE_USB_CAM_FRAMED_SOURCE_HPP
+#define LIVE_USB_CAM_FRAMED_SOURCE_HPP
 
 #include <FramedSource.hh>
 #include <UsageEnvironment.hh>
@@ -9,12 +9,12 @@
 namespace LIRS {
 
     /**
-     * Implementation of the source in Live555 framework.
+     * Implementation of the framed source for live usb camera.
      */
-    class USBCamFramedSource : public FramedSource {
+    class LiveUSBCamFramedSource : public FramedSource {
     public:
 
-        static USBCamFramedSource *createNew(UsageEnvironment &env, Transcoder *transcoder);
+        static LiveUSBCamFramedSource *createNew(UsageEnvironment &env, Transcoder *transcoder);
 
     protected:
 
@@ -22,11 +22,11 @@ namespace LIRS {
          * Constructs new instance of framed source using video device as a source.
          *
          * @param env - environment (see Live555 docs).
-         * @param transcoder - pointer to the transcoder providing encoded data.
+         * @param transcoder - providing with encoded data.
          */
-        USBCamFramedSource(UsageEnvironment &env, Transcoder *transcoder);
+        LiveUSBCamFramedSource(UsageEnvironment &env, Transcoder *transcoder);
 
-        ~USBCamFramedSource() override;
+        ~LiveUSBCamFramedSource() override;
 
         void doGetNextFrame() override;
 
@@ -44,6 +44,12 @@ namespace LIRS {
          */
         EventTriggerId eventTriggerId;
 
+        std::mutex encodedDataMutex;
+
+        /**
+         * Encoded data buffer.
+         * This data will be sent by the server.
+         */
         std::vector<std::vector<uint8_t>> encodedData;
 
         /**
@@ -51,11 +57,18 @@ namespace LIRS {
          */
         void onEncodedData(std::vector<uint8_t> &&data);
 
+        /**
+         * Delivers encoded data.
+         */
         void deliverData();
 
+        /**
+         * Trigger binded function.
+         * It will be called by the trigger.
+         */
         static void deliverFrame0(void *);
     };
 
 }
 
-#endif //LIVE_VIDEO_STREAM_H264_FRAMED_SOURCE_HPP
+#endif //LIVE_USB_CAM_FRAMED_SOURCE_HPP

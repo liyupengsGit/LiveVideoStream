@@ -61,8 +61,8 @@ namespace LIRS {
     } TranscoderContext;
 
     /**
-     * Transcoder enables to decode raw data from video device,
-     * encode it using H.264 (libx264) codec, and pass the encoded data to the consumer.
+     * Transcoder decodes some video resource and encodes it.
+     * The encoded data can be passed to the consumer.
      */
     class Transcoder {
 
@@ -76,7 +76,7 @@ namespace LIRS {
          * @param frameWidth - width of the frame used for decoding and encoding process (could be changed if not supported).
          * @param frameHeight - height of the frame used for decoding and encoding process (could be changed if not supported).
          * @param rawPixelFormatStr - pixel format of the raw video data, e.g. 'yuyv422' (could be changed if not supported).
-         * @param encoderPixelFormatStr - pixel format of the encoded data (see supported pixel formats for libx264).
+         * @param encoderPixelFormatStr - pixel format of the encoded data (see supported formats).
          * @param frameRate - hardware's framerate (could be changed if not supported by the device).
          * @param frameStep - how many frames to skip to decrease output framerate.
          * @param outputFrameRate - desired framerate (used to decrease device's framerate).
@@ -142,7 +142,7 @@ namespace LIRS {
          * @param w - frame width (could be changed if not supported).
          * @param h - frame height (could be changed if not supported).
          * @param rawPixFmtStr - raw video data pixel format, e.g. 'yuyv422', 'bayer_grbg8' (could be changed if not supported).
-         * @param encPixFmtStr - encoded video data pixel format (see libx264 supported pixel formats).
+         * @param encPixFmtStr - encoded video data pixel format.
          * @param frameRate - device's supported framerate (could be changed by device if not supported).
          * @param frameStep - how many frames to skip (used for decreasing framerate).
          * @param outFrameRate - the desired framerate (used to decrease supported framerate).
@@ -179,7 +179,7 @@ namespace LIRS {
         AVPixelFormat rawPixFormat;
 
         /**
-         * Encoded video data pixel format (libx264).
+         * Encoded video data pixel format.
          */
         AVPixelFormat encoderPixFormat;
 
@@ -237,7 +237,7 @@ namespace LIRS {
         AVPacket *decodingPacket;
 
         /**
-         * Packet holding the encoded data (H.264).
+         * Packet holding the encoded data.
          */
         AVPacket *encodingPacket;
 
@@ -275,10 +275,10 @@ namespace LIRS {
         /** constants **/
 
         /**
-         * H.264 start code bytes number (first 4 bytes).
+         * NALU start code bytes number (first 4 bytes).
          * Used to truncate start codes from the encoded data.
          */
-        const static unsigned int START_CODE_BYTES_NUMBER = 4;
+        const static unsigned int NALU_START_CODE_BYTES_NUMBER = 4;
 
         /* Methods */
 
@@ -293,9 +293,8 @@ namespace LIRS {
         void initializeDecoder();
 
         /**
-         * Initializes encoder in order to encode raw frames using H.264 codec.
+         * Initializes encoder in order to encode raw frames.
          * Tune encoder here using different profiles, tune options, crf values etc.
-         * See more on options in H.264 docs.
          */
         void initializeEncoder();
 

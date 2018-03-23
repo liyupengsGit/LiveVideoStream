@@ -5,7 +5,7 @@
 #include <BasicUsageEnvironment.hh>
 #include <GroupsockHelper.hh>
 #include <liveMedia.hh>
-#include "USBCamFramedSource.hpp"
+#include "LiveUSBCamFramedSource.hpp"
 #include "CameraUnicastServerMediaSubsession.hpp"
 
 namespace LIRS {
@@ -96,7 +96,7 @@ namespace LIRS {
 
         static const unsigned int DEFAULT_RTSP_PORT_NUMBER = 8554;
 
-        static const unsigned int OUT_PACKET_BUFFER_MAX_SIZE = 20 * 1000;
+        static const unsigned int OUT_PACKET_BUFFER_MAX_SIZE = 100 * 1000;
 
     private:
 
@@ -148,12 +148,12 @@ namespace LIRS {
          *
          * @param transcoder - video source.
          * @param streamName - the name of the stream (part of the URL), e.g. rtsp://.../<camera/1>.
-         * @param streamDesc -description of the stream (SDP file).
+         * @param streamDesc -description of the stream.
          */
         void addMediaSession(Transcoder *transcoder, const std::string &streamName, const std::string &streamDesc) {
 
             // create framed source based on transcoder
-            auto framedSource = USBCamFramedSource::createNew(*env, transcoder);
+            auto framedSource = LiveUSBCamFramedSource::createNew(*env, transcoder);
 
             allocatedVideoSources.push_back(framedSource);
 

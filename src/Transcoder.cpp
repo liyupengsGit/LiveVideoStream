@@ -94,9 +94,10 @@ namespace LIRS {
     Transcoder::Transcoder(const std::string &url, const std::string &alias, size_t w, size_t h,
                            const std::string &rawPixFmtStr, const std::string &encPixFmtStr,
                            size_t frameRate, size_t frameStep, size_t outFrameRate)
-            : videoSourceUrl(url), deviceAlias(alias), frameWidth(w), frameHeight(h), frameRate(frameRate),
-              frameStep(frameStep), outputFrameRate(outFrameRate), sourceBitRate(0), decoderContext({}),
-              encoderContext({}), rawFrame(nullptr), convertedFrame(nullptr), filterFrame(nullptr),
+            : videoSourceUrl(url), deviceAlias(alias), frameWidth(w), frameHeight(h),
+              frameRate(AVRational{(int) frameRate, 1}),
+              frameStep(frameStep), outputFrameRate(AVRational{(int) outFrameRate, 1}), sourceBitRate(0),
+              decoderContext({}), encoderContext({}), rawFrame(nullptr), convertedFrame(nullptr), filterFrame(nullptr),
               decodingPacket(nullptr), encodingPacket(nullptr), converterContext(nullptr), filterGraph(nullptr),
               bufferSrcCtx(nullptr), bufferSinkCtx(nullptr), isPlayingFlag(false) {
 
@@ -140,14 +141,16 @@ namespace LIRS {
 
         // holds the general (header) information about the format (container)
         decoderContext.formatContext = avformat_alloc_context();
-        auto inputFormat = av_find_input_format("v4l2");
 
-        auto frameResolution = utils::concatParams({frameWidth, frameHeight}, "x");
+        AVInputFormat *inputFormat = av_find_input_format("v4l2"); // using Video4Linux for capturing
+
+        auto frameResolutionStr = utils::concatParams({frameWidth, frameHeight}, "x");
+        auto framerateStr = utils::concatParams({(size_t) frameRate.num, (size_t) frameRate.den}, "/");
 
         AVDictionary *options = nullptr;
-        av_dict_set(&options, "video_size", frameResolution.data(), 0);
+        av_dict_set(&options, "video_size", frameResolutionStr.data(), 0);
         av_dict_set(&options, "pixel_format", av_get_pix_fmt_name(rawPixFormat), 0);
-        av_dict_set_int(&options, "framerate", frameRate, 0);
+        av_dict_set(&options, "framerate", framerateStr.data(), 0);
 
         int statCode = avformat_open_input(&decoderContext.formatContext, videoSourceUrl.data(),
                                            inputFormat, &options);
@@ -159,8 +162,8 @@ namespace LIRS {
 
         av_dump_format(decoderContext.formatContext, 0, videoSourceUrl.data(), 0);
 
-        // find video stream
-        auto videoStreamIndex = av_find_best_stream(decoderContext.formatContext, AVMEDIA_TYPE_VIDEO, -1, -1,
+        // find video stream (if multiple video streams are available choose manually)
+        int videoStreamIndex = av_find_best_stream(decoderContext.formatContext, AVMEDIA_TYPE_VIDEO, -1, -1,
                                                     &decoderContext.codec, 0);
         assert(videoStreamIndex >= 0);
         assert(decoderContext.codec);
@@ -169,6 +172,8 @@ namespace LIRS {
         // create codec context (for each codec its own codec context)
         decoderContext.codecContext = avcodec_alloc_context3(decoderContext.codec);
         assert(decoderContext.codecContext);
+
+        // copy video stream parameters to the codec context
         statCode = avcodec_parameters_to_context(decoderContext.codecContext, decoderContext.videoStream->codecpar);
         assert(statCode >= 0);
 
@@ -177,8 +182,7 @@ namespace LIRS {
         assert(statCode == 0);
 
         // save info
-        frameRate = static_cast<size_t>(decoderContext.videoStream->r_frame_rate.num /
-                                        decoderContext.videoStream->r_frame_rate.den);
+        frameRate = decoderContext.videoStream->r_frame_rate;
         frameWidth = static_cast<size_t>(decoderContext.codecContext->width);
         frameHeight = static_cast<size_t>(decoderContext.codecContext->height);
         rawPixFormat = decoderContext.codecContext->pix_fmt;
@@ -189,14 +193,14 @@ namespace LIRS {
 
         rawFrame = av_frame_alloc();
 
-        LOG(INFO) << "Decoder for \"" << videoSourceUrl << "\" has been created (fps: "
-                  << frameRate << ", width x height: " << frameWidth << "x" << frameHeight << ")";
+        LOG(INFO) << "Decoder for \"" << videoSourceUrl << "\" has been created (framerate: "
+                  << frameRate.num << "/" << frameRate.den << ", w x h: " << frameWidth << "x" << frameHeight << ")";
     }
 
     void Transcoder::initializeEncoder() {
 
         // allocate format context for an output format (null - no output file)
-        auto statCode = avformat_alloc_output_context2(&encoderContext.formatContext, nullptr, "null", nullptr);
+        int statCode = avformat_alloc_output_context2(&encoderContext.formatContext, nullptr, "null", nullptr);
         assert(statCode >= 0);
 
         encoderContext.codec = avcodec_find_encoder_by_name("libx265");
@@ -215,10 +219,10 @@ namespace LIRS {
         encoderContext.codecContext->width = static_cast<int>(frameWidth);
         encoderContext.codecContext->height = static_cast<int>(frameHeight);
 
-        encoderContext.codecContext->profile = FF_PROFILE_H264_BASELINE;
+        encoderContext.codecContext->profile = FF_PROFILE_HEVC_MAIN;
 
-        encoderContext.codecContext->time_base = (AVRational) {1, static_cast<int>(outputFrameRate)};
-        encoderContext.codecContext->framerate = (AVRational) {static_cast<int>(outputFrameRate), 1};
+        encoderContext.codecContext->time_base = (AVRational) {outputFrameRate.den, outputFrameRate.num};
+        encoderContext.codecContext->framerate = outputFrameRate;
 
         // set encoder's pixel format (most of the players support yuv420p)
         encoderContext.codecContext->pix_fmt = encoderPixFormat;
@@ -236,13 +240,13 @@ namespace LIRS {
         // the faster you get, the less compression is achieved
         av_dict_set(&options, "preset", "ultrafast", 0);
 
-        // optimization for fast encoding and low latency streaming (see x264 docs for more info)
+        // optimization for fast encoding and low latency streaming
         av_dict_set(&options, "tune", "zerolatency", 0);
 
         // constant rate factor
         av_dict_set_int(&options, "crf", 32, 0);
 
-        // set additional x264 options
+        // set additional codec options
         av_opt_set(encoderContext.codecContext->priv_data, "x265-params", "slices=2:intra-refresh=0", 0);
 
         // open the output format to use given codec
@@ -268,7 +272,7 @@ namespace LIRS {
         convertedFrame->width = static_cast<int>(frameWidth);
         convertedFrame->height = static_cast<int>(frameHeight);
         convertedFrame->format = encoderPixFormat;
-        auto statCode = av_frame_get_buffer(convertedFrame, 0);
+        int statCode = av_frame_get_buffer(convertedFrame, 0);
         assert(statCode == 0);
 
         // create converter from raw pixel format to encoder supported pixel format
@@ -286,8 +290,8 @@ namespace LIRS {
 
         filterFrame = av_frame_alloc();
 
-        auto bufferSrc = avfilter_get_by_name("buffer");
-        auto bufferSink = avfilter_get_by_name("buffersink");
+        AVFilter *bufferSrc = avfilter_get_by_name("buffer");
+        AVFilter *bufferSink = avfilter_get_by_name("buffersink");
 
         auto outputs = avfilter_inout_alloc();
         auto inputs = avfilter_inout_alloc();
@@ -297,7 +301,7 @@ namespace LIRS {
         char args[64];
         snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d:frame_rate=%d/%d", (int) frameWidth, (int) frameHeight,
                  rawPixFormat, decoderContext.videoStream->time_base.num, decoderContext.videoStream->time_base.den,
-                 1, 1, (int) frameRate, 1);
+                 1, 1, frameRate.num, frameRate.den);
 
         auto status = avfilter_graph_create_filter(&bufferSrcCtx, bufferSrc, "in", args, nullptr, filterGraph);
         assert(status >= 0);

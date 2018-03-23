@@ -186,7 +186,7 @@ namespace LIRS {
         /**
          * Device's supported framerate.
          */
-        size_t frameRate;
+        AVRational frameRate;
 
         /**
          * Number of frames to skip when encoding.
@@ -197,7 +197,7 @@ namespace LIRS {
          * Desired framerate.
          * Supported framerate is decreased to this value.
          */
-        size_t outputFrameRate;
+        AVRational outputFrameRate;
 
         /**
          * Video source's bitrate (raw video data).

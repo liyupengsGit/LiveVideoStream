@@ -247,7 +247,7 @@ namespace LIRS {
         av_dict_set_int(&options, "crf", 32, 0);
 
         // set additional codec options
-        av_opt_set(encoderContext.codecContext->priv_data, "x265-params", "slices=5:intra-refresh=0", 0);
+        av_opt_set(encoderContext.codecContext->priv_data, "x265-params", "slices=2:intra-refresh=1", 0);
 
         // open the output format to use given codec
         statCode = avcodec_open2(encoderContext.codecContext, encoderContext.codec, &options);

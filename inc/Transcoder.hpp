@@ -3,10 +3,7 @@
 
 #include <string>
 #include <thread>
-#include <mutex>
-#include <queue>
 #include <atomic>
-#include <chrono>
 
 #include "Utils.hpp"
 #include "Logger.hpp"
@@ -29,6 +26,7 @@ namespace LIRS {
 
     /**
      * Structure representing context for decoding or encoding process.
+     * @note: user must manually destruct this structure.
      */
     typedef struct TranscoderContext {
 
@@ -71,15 +69,15 @@ namespace LIRS {
         /**
          * Creates new instance of this class.
          *
-         * @param sourceUrl - video source path/url, e.g. /dev/video0, /dev/video1.
+         * @param sourceUrl - video source path, e.g. /dev/video0, /dev/video1.
          * @param devAlias - alias name for the device (optional).
          * @param frameWidth - width of the frame used for decoding and encoding process (could be changed if not supported).
          * @param frameHeight - height of the frame used for decoding and encoding process (could be changed if not supported).
          * @param rawPixelFormatStr - pixel format of the raw video data, e.g. 'yuyv422' (could be changed if not supported).
          * @param encoderPixelFormatStr - pixel format of the encoded data (see supported formats).
          * @param frameRate - hardware's framerate (could be changed if not supported by the device).
-         * @param frameStep - how many frames to skip to decrease output framerate.
-         * @param outputFrameRate - desired framerate (used to decrease device's framerate).
+         * @param frameStep - how many frames to skip for decreasing output framerate.
+         * @param outputFrameRate - output framerate of the video stream.
          * @return pointer to the created instance of the transcoder class.
          */
         static Transcoder *
@@ -95,12 +93,13 @@ namespace LIRS {
 
         /**
          * Prohibit copy assignment operator.
-         * See copy constructor.
+         * @see copy constructor.
          */
         Transcoder &operator=(const Transcoder &) = delete;
 
         /**
          * Destructor of the transcoder.
+         * @note the actual destruction occurs in the cleanup().
          */
         ~Transcoder();
 
@@ -112,19 +111,19 @@ namespace LIRS {
         /**
          * Sets callback function which indicates that a new encoded video data is available.
          *
-         * @param callback - callback function to be set to.
+         * @param callback - callback function.
          */
         void setOnEncodedDataCallback(std::function<void(std::vector<uint8_t> &&)> callback);
 
         /**
-         * Returns device url/path, e.g. /dev/video0.
+         * Returns path to the device, e.g. /dev/video0.
          *
-         * @return device url/path.
+         * @return deivce path.
          */
         std::string getDeviceName() const;
 
         /**
-         * Returns the device alias, e.g. 'frontCamera'.
+         * Returns the alias of the device, e.g. 'frontCamera'.
          *
          * @return device alias.
          */
@@ -133,11 +132,9 @@ namespace LIRS {
     private:
 
         /**
-         * Constructs new instance of the transcoder class.
-         * Used internally (private).
-         * In order to create an instance use 'newInstance' function instead.
+         * Constructs new instance of the transcoder.
          *
-         * @param url - video source url/path, e.g. /dev/video0
+         * @param url - video source path, e.g. /dev/video0
          * @param alias - device alias name (optional).
          * @param w - frame width (could be changed if not supported).
          * @param h - frame height (could be changed if not supported).
@@ -145,7 +142,7 @@ namespace LIRS {
          * @param encPixFmtStr - encoded video data pixel format.
          * @param frameRate - device's supported framerate (could be changed by device if not supported).
          * @param frameStep - how many frames to skip (used for decreasing framerate).
-         * @param outFrameRate - the desired framerate (used to decrease supported framerate).
+         * @param outFrameRate - streaming framerate.
          */
         Transcoder(const std::string &url, const std::string &alias, size_t w, size_t h,
                    const std::string &rawPixFmtStr, const std::string &encPixFmtStr, size_t frameRate,
@@ -194,8 +191,7 @@ namespace LIRS {
         size_t frameStep;
 
         /**
-         * Desired framerate.
-         * Supported framerate is decreased to this value.
+         * Output stream's framerate.
          */
         AVRational outputFrameRate;
 
@@ -217,12 +213,12 @@ namespace LIRS {
         TranscoderContext encoderContext;
 
         /**
-         * Holds raw frame data and additional information (resolution, etc.)
+         * Holds raw video data and additional information (resolution, etc.)
          */
         AVFrame *rawFrame;
 
         /**
-         * Converted from raw data pixel format to the supported by the encoder pixel format structure.
+         * Holds converted frame data (from one pixel format to another one).
          */
         AVFrame *convertedFrame;
 
@@ -232,18 +228,17 @@ namespace LIRS {
         AVFrame *filterFrame;
 
         /**
-         * Packet sent to the decoder in order to receive raw frame.
+         * Decoding packet (is sent to the decoder).
          */
         AVPacket *decodingPacket;
 
         /**
-         * Packet holding the encoded data.
+         * Encoding packet (holds encoded data).
          */
         AVPacket *encodingPacket;
 
         /**
-         * Context holding information on conversion from one pixel format to another one.
-         * For example, 'yuyv422' -> 'yuv422p'.
+         * Conversion context from one pixel format to another one.
          */
         SwsContext *converterContext;
 
@@ -254,16 +249,19 @@ namespace LIRS {
 
         /**
          * Filter context for buffer source.
+         * Frames to be filtered are passed to the buffer source.
          */
         AVFilterContext *bufferSrcCtx;
 
         /**
          * Filter context for buffer sink.
+         * Frames to be filtered are retrieved from the buffer sink.
          */
         AVFilterContext *bufferSinkCtx;
 
         /**
-         * Flag indicating whether the device is accessible or not.
+         * Flag indicating whether the streaming source is accessible or not.
+         * @note used to handle the destruction of the transcoder.
          */
         std::atomic_bool isPlayingFlag;
 
@@ -275,10 +273,10 @@ namespace LIRS {
         /** constants **/
 
         /**
-         * NALU start code bytes number (first 4 bytes).
+         * NALU start code bytes number (first 4 bytes, {0x0, 0x0, 0x0, 0x1}).
          * Used to truncate start codes from the encoded data.
          */
-        const static unsigned int NALU_START_CODE_BYTES_NUMBER = 4;
+        const static unsigned int NALU_START_CODE_BYTES_NUMBER = 4U;
 
         /* Methods */
 
@@ -288,13 +286,13 @@ namespace LIRS {
         void registerAll();
 
         /**
-         * Initializes decoder in order to capture raw frames from the video device.
+         * Initializes decoder in order to capture raw frames from the video source.
          */
         void initializeDecoder();
 
         /**
          * Initializes encoder in order to encode raw frames.
-         * Tune encoder here using different profiles, tune options, crf values etc.
+         * Tune encoder here using different profiles, tune options.
          */
         void initializeEncoder();
 
@@ -304,7 +302,8 @@ namespace LIRS {
         void initializeConverter();
 
         /**
-         * Initializes filters, e.g. 'framestep=step=3'
+         * Initializes filters, e.g. 'framestep', 'fps'.
+         * See filter docs.
          */
         void initFilters();
 

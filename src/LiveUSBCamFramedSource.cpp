@@ -15,6 +15,9 @@ namespace LIRS {
         envir().taskScheduler().deleteEventTrigger(eventTriggerId);
         eventTriggerId = 0;
 
+        encodedData.clear();
+        encodedData.shrink_to_fit();
+
         LOG(DEBUG) << "USB camera framed source " << transcoder->getDeviceName() <<  " has been destructed";
     }
 
@@ -23,6 +26,8 @@ namespace LIRS {
 
         // create trigger invoking method which will deliver frame
         eventTriggerId = envir().taskScheduler().createEventTrigger(LiveUSBCamFramedSource::deliverFrame0);
+
+        encodedData.reserve(30); // reserve enough space for handling incoming encoded data
 
         // set transcoder's callback indicating new encoded data availability
         transcoder->setOnEncodedDataCallback(std::bind(&LiveUSBCamFramedSource::onEncodedData,

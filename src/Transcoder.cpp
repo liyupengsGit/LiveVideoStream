@@ -12,16 +12,17 @@ namespace LIRS {
                               frameRate, frameStep, outputFrameRate);
     }
 
+    // TODO: make the destruction process more easy and controllable
     Transcoder::~Transcoder() {
 
-        isPlayingFlag.store(false); // signal to run() to stop decoding/encoding frames
+        isPlayingFlag.store(false); // signal to stop decoding/encoding frames
 
         LOG(INFO) << "Transcoder has been destructed";
     }
 
     void Transcoder::run() {
 
-        // set the playing flag
+        // set the flag indicating that we're streaming
         isPlayingFlag.store(true);
 
         // read raw data from the device into the packet
@@ -38,7 +39,7 @@ namespace LIRS {
 
                     if (statusCode < 0) continue; // workaround for buggy cameras
 
-                    // pull frames from filter graph
+                    // pull frames from the filter graph
                     while (true) {
 
                         statusCode = av_buffersink_get_frame(bufferSinkCtx, filterFrame);
@@ -61,16 +62,12 @@ namespace LIRS {
 
                         if (encode(encoderContext.codecContext, convertedFrame, encodingPacket) >= 0) {
 
-                            /*
-                            av_packet_rescale_ts(encodingPacket, decoderContext.videoStream->time_base,
-                                                 encoderContext.videoStream->time_base);
-                            */
-
-                            // invoke the callback indicating that a new encoded data is available
+                            // new encoded data is available (one NALU)
                             if (onEncodedDataCallback) {
                                 onEncodedDataCallback(
                                         std::vector<uint8_t>(encodingPacket->data + NALU_START_CODE_BYTES_NUMBER,
-                                                             encodingPacket->data + encodingPacket->size));
+                                                             encodingPacket->data + encodingPacket->size)
+                                );
                             }
                         }
 
@@ -142,7 +139,7 @@ namespace LIRS {
         // holds the general (header) information about the format (container)
         decoderContext.formatContext = avformat_alloc_context();
 
-        AVInputFormat *inputFormat = av_find_input_format("v4l2"); // using Video4Linux for capturing
+        AVInputFormat *inputFormat = av_find_input_format("v4l2"); // using Video4Linux API for capturing
 
         auto frameResolutionStr = utils::concatParams({frameWidth, frameHeight}, "x");
         auto framerateStr = utils::concatParams({(size_t) frameRate.num, (size_t) frameRate.den}, "/");
@@ -157,12 +154,13 @@ namespace LIRS {
         av_dict_free(&options);
         assert(statCode == 0);
 
+        // get the info on all available streams
         statCode = avformat_find_stream_info(decoderContext.formatContext, nullptr);
         assert(statCode >= 0);
 
         av_dump_format(decoderContext.formatContext, 0, videoSourceUrl.data(), 0);
 
-        // find video stream (if multiple video streams are available choose manually)
+        // find video stream (if multiple video streams are available then you should choose one manually)
         int videoStreamIndex = av_find_best_stream(decoderContext.formatContext, AVMEDIA_TYPE_VIDEO, -1, -1,
                                                    &decoderContext.codec, 0);
         assert(videoStreamIndex >= 0);
@@ -188,9 +186,11 @@ namespace LIRS {
         rawPixFormat = decoderContext.codecContext->pix_fmt;
         sourceBitRate = static_cast<size_t>(decoderContext.codecContext->bit_rate);
 
+        // allocate decoding packet
         decodingPacket = av_packet_alloc();
         av_init_packet(decodingPacket);
 
+        // allocate frame
         rawFrame = av_frame_alloc();
 
         LOG(INFO) << "Decoder for \"" << videoSourceUrl << "\" has been created (framerate: "
@@ -206,7 +206,7 @@ namespace LIRS {
         encoderContext.codec = avcodec_find_encoder_by_name("libx265");
         assert(encoderContext.codec);
 
-        // create new video output stream
+        // create new video output stream (dummy)
         encoderContext.videoStream = avformat_new_stream(encoderContext.formatContext, encoderContext.codec);
         assert(encoderContext.videoStream);
         encoderContext.videoStream->id = encoderContext.formatContext->nb_streams - 1;
@@ -224,9 +224,8 @@ namespace LIRS {
         encoderContext.codecContext->time_base = (AVRational) {outputFrameRate.den, outputFrameRate.num};
         encoderContext.codecContext->framerate = outputFrameRate;
 
-        // set encoder's pixel format (most of the players support yuv420p)
+        // set encoder's pixel format (it is advised to use yuv420p)
         encoderContext.codecContext->pix_fmt = encoderPixFormat;
-
 
         if (encoderContext.formatContext->flags & AVFMT_GLOBALHEADER) {
             encoderContext.codecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -247,32 +246,33 @@ namespace LIRS {
         av_dict_set_int(&options, "crf", 32, 0);
 
         // set additional codec options
-        av_opt_set(encoderContext.codecContext->priv_data, "x265-params", "slices=2:intra-refresh=1", 0);
+        av_opt_set(encoderContext.codecContext->priv_data, "x265-params", "slices=1:intra-refresh=1", 0);
 
         // open the output format to use given codec
         statCode = avcodec_open2(encoderContext.codecContext, encoderContext.codec, &options);
         av_dict_free(&options);
         assert(statCode == 0);
 
-        // initializes time base
+        // initializes time base automatically
         statCode = avformat_write_header(encoderContext.formatContext, nullptr);
         assert(statCode >= 0);
 
         // report info to the console
         av_dump_format(encoderContext.formatContext, encoderContext.videoStream->index, "null", 1);
 
+        // allocate encoding packet
         encodingPacket = av_packet_alloc();
         av_init_packet(encodingPacket);
     }
 
     void Transcoder::initializeConverter() {
 
-        // allocate frame to be used in converter manually allocating buffer
+        // allocate frame to be used in converter
         convertedFrame = av_frame_alloc();
         convertedFrame->width = static_cast<int>(frameWidth);
         convertedFrame->height = static_cast<int>(frameHeight);
         convertedFrame->format = encoderPixFormat;
-        int statCode = av_frame_get_buffer(convertedFrame, 0);
+        int statCode = av_frame_get_buffer(convertedFrame, 0); // ref counted
         assert(statCode == 0);
 
         // create converter from raw pixel format to encoder supported pixel format
@@ -280,32 +280,33 @@ namespace LIRS {
                                                 rawPixFormat, static_cast<int>(frameWidth),
                                                 static_cast<int>(frameHeight), encoderPixFormat, SWS_FAST_BILINEAR,
                                                 nullptr, nullptr, nullptr);
-
-        LOG(INFO) << "Pixel format converter for \"" << videoSourceUrl << "\" has been created ("
-                  << av_get_pix_fmt_name(rawPixFormat) << " -> " << av_get_pix_fmt_name(encoderPixFormat) << ")";
-
     }
 
     void Transcoder::initFilters() {
 
+        // allocate filter frame (where the filtered frame will be stored)
         filterFrame = av_frame_alloc();
 
+        // create buffer source and sink
         AVFilter *bufferSrc = avfilter_get_by_name("buffer");
         AVFilter *bufferSink = avfilter_get_by_name("buffersink");
 
-        auto outputs = avfilter_inout_alloc();
-        auto inputs = avfilter_inout_alloc();
+        AVFilterInOut *outputs = avfilter_inout_alloc();
+        AVFilterInOut * inputs = avfilter_inout_alloc();
 
+        // allocate filter graph
         filterGraph = avfilter_graph_alloc();
 
-        char args[64];
-        snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d:frame_rate=%d/%d", (int) frameWidth, (int) frameHeight,
-                 rawPixFormat, decoderContext.videoStream->time_base.num, decoderContext.videoStream->time_base.den,
-                 1, 1, frameRate.num, frameRate.den);
+        char args[128];
+        snprintf(args, sizeof(args), "width=%d:height=%d:pix_fmt=%d:time_base=%d/%d:sar=%d/%d:frame_rate=%d/%d",
+                 (int) frameWidth, (int) frameHeight, rawPixFormat, decoderContext.videoStream->time_base.num,
+                 decoderContext.videoStream->time_base.den, 1, 1, frameRate.num, frameRate.den);
 
+        // create buffer source with the specified params
         auto status = avfilter_graph_create_filter(&bufferSrcCtx, bufferSrc, "in", args, nullptr, filterGraph);
         assert(status >= 0);
 
+        // create buffer sink
         status = avfilter_graph_create_filter(&bufferSinkCtx, bufferSink, "out", nullptr, nullptr, filterGraph);
         assert(status >= 0);
 
@@ -319,11 +320,14 @@ namespace LIRS {
         inputs->pad_idx = 0;
         inputs->next = nullptr;
 
-        char frameStepF[32];
+        // create filter query
+        char frameStepFilterQuery[32];
 
-        snprintf(frameStepF, sizeof(frameStepF), "framestep=step=%d", static_cast<unsigned int>(frameStep));
+        snprintf(frameStepFilterQuery, sizeof(frameStepFilterQuery), "framestep=step=%d",
+                 static_cast<unsigned int>(frameStep));
 
-        status = avfilter_graph_parse(filterGraph, frameStepF, inputs, outputs, nullptr);
+        // add graph represented by the filter query
+        status = avfilter_graph_parse(filterGraph, frameStepFilterQuery, inputs, outputs, nullptr);
         assert(status >= 0);
 
         status = avfilter_graph_config(filterGraph, nullptr);
@@ -332,13 +336,15 @@ namespace LIRS {
 
     int Transcoder::decode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
 
-        auto statCode = avcodec_send_packet(codecContext, packet);
+        // send a packet to be filled with raw data
+        int statCode = avcodec_send_packet(codecContext, packet);
 
         if (statCode < 0) {
             LOG(ERROR) << "Error sending a packet for decoding: " << videoSourceUrl;
             return statCode;
         }
 
+        // receive decoded raw frame
         statCode = avcodec_receive_frame(codecContext, frame);
 
         if (statCode == AVERROR(EAGAIN) || statCode == AVERROR_EOF) {
@@ -356,13 +362,15 @@ namespace LIRS {
 
     int Transcoder::encode(AVCodecContext *codecContext, AVFrame *frame, AVPacket *packet) {
 
-        auto statCode = avcodec_send_frame(codecContext, frame);
+        // send a raw frame to be encoded
+        int statCode = avcodec_send_frame(codecContext, frame);
 
         if (statCode < 0) {
             LOG(ERROR) << "Error during sending frame for encoding";
             return statCode;
         }
 
+        // receive a packet containing encoded data
         statCode = avcodec_receive_packet(codecContext, packet);
 
         if (statCode == AVERROR(EAGAIN) || statCode == AVERROR_EOF) {

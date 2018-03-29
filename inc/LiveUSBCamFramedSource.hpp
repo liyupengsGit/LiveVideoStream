@@ -4,7 +4,7 @@
 #include <FramedSource.hh>
 #include <UsageEnvironment.hh>
 #include <Transcoder.hpp>
-#include <list>
+#include <mutex>
 
 namespace LIRS {
 

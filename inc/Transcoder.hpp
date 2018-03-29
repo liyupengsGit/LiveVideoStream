@@ -1,12 +1,12 @@
 #ifndef LIVE_VIDEO_STREAM_TRANSCODER_HPP
 #define LIVE_VIDEO_STREAM_TRANSCODER_HPP
 
-#include <string>
-#include <thread>
 #include <atomic>
+#include <functional>
+#include <string>
 
-#include "Utils.hpp"
 #include "Logger.hpp"
+#include "Utils.hpp"
 
 #ifdef __cplusplus
 extern "C" {
@@ -67,7 +67,7 @@ namespace LIRS {
     public:
 
         /**
-         * Creates new instance of this class.
+         * Creates a new instance of this class.
          *
          * @param sourceUrl - video source path, e.g. /dev/video0, /dev/video1.
          * @param devAlias - alias name for the device (optional).

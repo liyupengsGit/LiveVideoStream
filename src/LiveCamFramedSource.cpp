@@ -1,12 +1,12 @@
-#include "LiveUSBCamFramedSource.hpp"
+#include "LiveCamFramedSource.hpp"
 
 namespace LIRS {
 
-    LiveUSBCamFramedSource *LiveUSBCamFramedSource::createNew(UsageEnvironment &env, Transcoder *transcoder) {
-        return new LiveUSBCamFramedSource(env, transcoder);
+    LiveCamFramedSource *LiveCamFramedSource::createNew(UsageEnvironment &env, Transcoder *transcoder) {
+        return new LiveCamFramedSource(env, transcoder);
     }
 
-    LiveUSBCamFramedSource::~LiveUSBCamFramedSource() {
+    LiveCamFramedSource::~LiveCamFramedSource() {
 
         // cleanup transcoder
         delete transcoder;
@@ -15,38 +15,39 @@ namespace LIRS {
         envir().taskScheduler().deleteEventTrigger(eventTriggerId);
         eventTriggerId = 0;
 
+        // cleanup encoded data buffer
         encodedData.clear();
         encodedData.shrink_to_fit();
 
-        LOG(DEBUG) << "USB camera framed source " << transcoder->getDeviceName() <<  " has been destructed";
+        LOG(DEBUG) << "USB camera framed source " << transcoder->getDeviceName() << " has been destructed";
     }
 
-    LiveUSBCamFramedSource::LiveUSBCamFramedSource(UsageEnvironment &env, Transcoder *transcoder) :
+    LiveCamFramedSource::LiveCamFramedSource(UsageEnvironment &env, Transcoder *transcoder) :
             FramedSource(env), transcoder(transcoder), eventTriggerId(0) {
 
         // create trigger invoking method which will deliver frame
-        eventTriggerId = envir().taskScheduler().createEventTrigger(LiveUSBCamFramedSource::deliverFrame0);
+        eventTriggerId = envir().taskScheduler().createEventTrigger(LiveCamFramedSource::deliverFrame0);
 
         encodedData.reserve(30); // reserve enough space for handling incoming encoded data
 
         // set transcoder's callback indicating new encoded data availability
-        transcoder->setOnEncodedDataCallback(std::bind(&LiveUSBCamFramedSource::onEncodedData,
-                                                       this, std::placeholders::_1));
+        transcoder->setOnEncodedDataCallback(std::bind(&LiveCamFramedSource::onEncodedData, this,
+                                                       std::placeholders::_1));
 
-        // start video data encoding and decoding
+        // start video data encoding/decoding in a new thread
 
         std::thread([transcoder]() {
             transcoder->run();
         }).detach();
     }
 
-    void LiveUSBCamFramedSource::onEncodedData(std::vector<uint8_t> &&newData) {
+    void LiveCamFramedSource::onEncodedData(std::vector<uint8_t> &&newData) {
 
         if (!isCurrentlyAwaitingData()) return;
 
         encodedDataMutex.lock();
 
-        encodedData.emplace_back(std::move(newData));
+        encodedData.emplace_back(std::move(newData)); // add encoded data to be processed later
 
         encodedDataMutex.unlock();
 
@@ -54,22 +55,25 @@ namespace LIRS {
         envir().taskScheduler().triggerEvent(eventTriggerId, this);
     }
 
-    void LiveUSBCamFramedSource::deliverFrame0(void *clientData) {
-        ((LiveUSBCamFramedSource *) clientData)->deliverData();
+    void LiveCamFramedSource::deliverFrame0(void *clientData) {
+        ((LiveCamFramedSource *) clientData)->deliverData();
     }
 
-    void LiveUSBCamFramedSource::doStopGettingFrames() {
+    void LiveCamFramedSource::doStopGettingFrames() {
         FramedSource::doStopGettingFrames();
     }
 
-    void LiveUSBCamFramedSource::deliverData() {
+    void LiveCamFramedSource::deliverData() {
 
         if (!isCurrentlyAwaitingData()) {
             return; // there's no consumers (clients)
         }
 
         if (encodedData.empty()) {
-            LOG(WARN) << "---";
+            LOG(WARN) << "No data to send!";
+            fFrameSize = 0;
+            fNumTruncatedBytes = 0;
+//            FramedSource::afterGetting(this); // should be invoked after successfully getting data
             return;
         }
 
@@ -84,7 +88,7 @@ namespace LIRS {
         if (frame.size() > fMaxSize) { // truncate data
             fFrameSize = fMaxSize;
             fNumTruncatedBytes = static_cast<unsigned int>(frame.size() - fMaxSize);
-            LOG(WARN) << "Encoded data size is insufficient: " << fMaxSize << ", truncated: " << fNumTruncatedBytes;
+            LOG(WARN) << "Encoded data size is insufficient: " << frame.size() << ", truncated: " << fNumTruncatedBytes;
         } else {
             fFrameSize = static_cast<unsigned int>(frame.size());
         }
@@ -96,7 +100,9 @@ namespace LIRS {
         FramedSource::afterGetting(this); // should be invoked after successfully getting data
     }
 
-    void LiveUSBCamFramedSource::doGetNextFrame() {}
+    void LiveCamFramedSource::doGetNextFrame() {
+//        deliverData();
+    }
 }
 
 

@@ -3,30 +3,33 @@
 
 #include <FramedSource.hh>
 #include <UsageEnvironment.hh>
-#include <Transcoder.hpp>
+
 #include <mutex>
+#include <thread>
+
+#include "Transcoder.hpp"
 
 namespace LIRS {
 
     /**
-     * Implementation of the framed source for live usb camera.
+     * Implementation of the framed source for live camera.
      */
-    class LiveUSBCamFramedSource : public FramedSource {
+    class LiveCamFramedSource : public FramedSource {
     public:
 
-        static LiveUSBCamFramedSource *createNew(UsageEnvironment &env, Transcoder *transcoder);
+        static LiveCamFramedSource *createNew(UsageEnvironment &env, Transcoder *transcoder);
 
     protected:
 
         /**
-         * Constructs new instance of framed source using video device as a source.
+         * Constructs a new instance of framed source using video device as a source.
          *
          * @param env - environment (see Live555 docs).
          * @param transcoder - providing with encoded data.
          */
-        LiveUSBCamFramedSource(UsageEnvironment &env, Transcoder *transcoder);
+        LiveCamFramedSource(UsageEnvironment &env, Transcoder *transcoder);
 
-        ~LiveUSBCamFramedSource() override;
+        ~LiveCamFramedSource() override;
 
         void doGetNextFrame() override;
 
@@ -44,6 +47,11 @@ namespace LIRS {
          */
         EventTriggerId eventTriggerId;
 
+        /**
+         * Mutex to access encoded data.
+         * @see encodedData
+         * @see deliverData()
+         */
         std::mutex encodedDataMutex;
 
         /**
@@ -63,7 +71,7 @@ namespace LIRS {
         void deliverData();
 
         /**
-         * Trigger binded function.
+         * Trigger function.
          * It will be called by the trigger.
          */
         static void deliverFrame0(void *);

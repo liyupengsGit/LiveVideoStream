@@ -1,15 +1,17 @@
 #include "Transcoder.hpp"
 
+#include <utility>
+
 namespace LIRS {
 
     Transcoder *Transcoder::newInstance(const std::string &sourceUrl, const std::string &devAlias,
                                         size_t frameWidth, size_t frameHeight, const std::string &rawPixelFormatStr,
-                                        const std::string &encoderPixelFormatStr, size_t frameRate, size_t frameStep,
-                                        size_t outputFrameRate) {
+                                        const std::string &encoderPixelFormatStr, size_t frameRate, size_t outputFrameRate,
+                                        const std::string &filterQuery) {
 
         // create new instance
         return new Transcoder(sourceUrl, devAlias, frameWidth, frameHeight, rawPixelFormatStr, encoderPixelFormatStr,
-                              frameRate, frameStep, outputFrameRate);
+                              frameRate, outputFrameRate, filterQuery);
     }
 
     // TODO: make the destruction process more easy and controllable
@@ -90,13 +92,12 @@ namespace LIRS {
 
     Transcoder::Transcoder(const std::string &url, const std::string &alias, size_t w, size_t h,
                            const std::string &rawPixFmtStr, const std::string &encPixFmtStr,
-                           size_t frameRate, size_t frameStep, size_t outFrameRate)
+                           size_t frameRate, size_t outFrameRate, const std::string &filterQuery)
             : videoSourceUrl(url), deviceAlias(alias), frameWidth(w), frameHeight(h),
-              frameRate(AVRational{(int) frameRate, 1}), frameStep(frameStep),
-              outputFrameRate(AVRational{(int) outFrameRate, 1}), sourceBitRate(0),
-              decoderContext({}), encoderContext({}), rawFrame(nullptr), convertedFrame(nullptr), filterFrame(nullptr),
-              decodingPacket(nullptr), encodingPacket(nullptr), converterContext(nullptr), filterGraph(nullptr),
-              bufferSrcCtx(nullptr), bufferSinkCtx(nullptr), isPlayingFlag(false) {
+              frameRate(AVRational{(int) frameRate, 1}), outputFrameRate(AVRational{(int) outFrameRate, 1}),
+              sourceBitRate(0), decoderContext({}), encoderContext({}), rawFrame(nullptr), convertedFrame(nullptr),
+              filterFrame(nullptr), decodingPacket(nullptr), encodingPacket(nullptr), converterContext(nullptr),
+              filterGraph(nullptr), bufferSrcCtx(nullptr), bufferSinkCtx(nullptr), isPlayingFlag(false) {
 
         LOG(INFO) << "Constructing transcoder for \"" << videoSourceUrl << "\"";
 
@@ -292,7 +293,7 @@ namespace LIRS {
         AVFilter *bufferSink = avfilter_get_by_name("buffersink");
 
         AVFilterInOut *outputs = avfilter_inout_alloc();
-        AVFilterInOut * inputs = avfilter_inout_alloc();
+        AVFilterInOut *inputs = avfilter_inout_alloc();
 
         // allocate filter graph
         filterGraph = avfilter_graph_alloc();
@@ -321,14 +322,21 @@ namespace LIRS {
         inputs->next = nullptr;
 
         // create filter query
-        char frameStepFilterQuery[32];
+        char frameStepFilterQuery[16];
 
-        snprintf(frameStepFilterQuery, sizeof(frameStepFilterQuery), "framestep=step=%d",
-                 static_cast<unsigned int>(frameStep));
+        if (this->filterQuery.empty()) {
 
-        // add graph represented by the filter query
-        status = avfilter_graph_parse(filterGraph, frameStepFilterQuery, inputs, outputs, nullptr);
-        assert(status >= 0);
+            snprintf(frameStepFilterQuery, sizeof(frameStepFilterQuery), "fps=fps=%d/%d", outputFrameRate.num, outputFrameRate.den);
+
+            // add graph represented by the filter query
+            status = avfilter_graph_parse(filterGraph, frameStepFilterQuery, inputs, outputs, nullptr);
+            assert(status >= 0);
+
+        } else {
+
+            status = avfilter_graph_parse(filterGraph, filterQuery.c_str(), inputs, outputs, nullptr);
+            assert(status >= 0);
+        }
 
         status = avfilter_graph_config(filterGraph, nullptr);
         assert(status >= 0);
@@ -430,7 +438,7 @@ namespace LIRS {
         encoderContext = {};
     }
 
-    bool Transcoder::isReadable() const {
+    const bool Transcoder::isReadable() const {
         return isPlayingFlag.load();
     }
 }

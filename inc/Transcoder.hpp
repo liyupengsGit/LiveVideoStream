@@ -70,20 +70,20 @@ namespace LIRS {
          * Creates a new instance of this class.
          *
          * @param sourceUrl - video source path, e.g. /dev/video0, /dev/video1.
-         * @param devAlias - alias name for the device (optional).
+         * @param devAlias - alias name for the device.
          * @param frameWidth - width of the frame used for decoding and encoding process (could be changed if not supported).
          * @param frameHeight - height of the frame used for decoding and encoding process (could be changed if not supported).
          * @param rawPixelFormatStr - pixel format of the raw video data, e.g. 'yuyv422' (could be changed if not supported).
          * @param encoderPixelFormatStr - pixel format of the encoded data (see supported formats).
          * @param frameRate - hardware's framerate (could be changed if not supported by the device).
-         * @param frameStep - how many frames to skip for decreasing output framerate.
          * @param outputFrameRate - output framerate of the video stream.
+         * @param filterQuery - filter query to create filter graph.
          * @return pointer to the created instance of the transcoder class.
          */
         static Transcoder *
         newInstance(const std::string &sourceUrl, const std::string &devAlias, size_t frameWidth, size_t frameHeight,
                     const std::string &rawPixelFormatStr, const std::string &encoderPixelFormatStr,
-                    size_t frameRate, size_t frameStep, size_t outputFrameRate);
+                    size_t frameRate, size_t outputFrameRate, const std::string &filterQuery = {});
 
         /**
          * Prohibit copy constructor.
@@ -132,28 +132,15 @@ namespace LIRS {
         /**
          * Whether the resource is ready for producing encoded data or not.
          *
-         * @return
+         * @return true if the resource is ready, otherwise - false.
          */
-        bool isReadable() const;
+        const bool isReadable() const;
 
     private:
 
-        /**
-         * Constructs new instance of the transcoder.
-         *
-         * @param url - video source path, e.g. /dev/video0
-         * @param alias - device alias name (optional).
-         * @param w - frame width (could be changed if not supported).
-         * @param h - frame height (could be changed if not supported).
-         * @param rawPixFmtStr - raw video data pixel format, e.g. 'yuyv422', 'bayer_grbg8' (could be changed if not supported).
-         * @param encPixFmtStr - encoded video data pixel format.
-         * @param frameRate - device's supported framerate (could be changed by device if not supported).
-         * @param frameStep - how many frames to skip (used for decreasing framerate).
-         * @param outFrameRate - streaming framerate.
-         */
         Transcoder(const std::string &url, const std::string &alias, size_t w, size_t h,
                    const std::string &rawPixFmtStr, const std::string &encPixFmtStr, size_t frameRate,
-                   size_t frameStep, size_t outFrameRate);
+                   size_t outFrameRate, const std::string &filterQuery);
 
         /* parameters */
 
@@ -191,11 +178,6 @@ namespace LIRS {
          * Device's supported framerate.
          */
         AVRational frameRate;
-
-        /**
-         * Number of frames to skip when encoding.
-         */
-        size_t frameStep;
 
         /**
          * Output stream's framerate.
@@ -248,6 +230,12 @@ namespace LIRS {
          * Conversion context from one pixel format to another one.
          */
         SwsContext *converterContext;
+
+        /**
+         * Filter query.
+         * Filter graph is constructed from it.
+         */
+        std::string filterQuery;
 
         /**
          * Filter graph used to create complex filter chains.

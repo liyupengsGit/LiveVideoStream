@@ -9,12 +9,12 @@ int main(int argc, char **argv) {
 //    auto transcoder3 = LIRS::Transcoder::newInstance("/dev/video0", "camera0", 744, 480, "bayer_grbg8", "yuv420p", 15, 3, 5);
 //    auto transcoder2 = LIRS::Transcoder::newInstance("/dev/video2", "camera2", 744, 480, "bayer_grbg8", "yuv420p", 15, 3, 5);
 //    auto transcoder1 = LIRS::Transcoder::newInstance("/dev/video3", "camera3", 744, 480, "bayer_grbg8", "yuv420p", 15, 3, 5);
-    auto transcoder0 = LIRS::Transcoder::newInstance("/dev/video0", "camera", 640, 480, "yuyv422", "yuv420p", 15, 5, 3);
 //    auto transcoder1 = LIRS::Transcoder::newInstance("/dev/video1", "camera1", 640, 480, "yuyv422", "yuv420p", 15, 15, 15);
+    auto transcoder = LIRS::Transcoder::newInstance("/dev/video0", "camera", 640, 480, "yuyv422", "yuv420p", 15, 7);
 
     auto server = new LIRS::LiveCameraRTSPServer();
-    server->addTranscoder(transcoder0);
-//    server->addTranscoder(transcoder1);
+
+    server->addTranscoder(transcoder);
 
     server->run();
 

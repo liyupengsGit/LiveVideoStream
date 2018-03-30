@@ -74,8 +74,6 @@ namespace LIRS {
         {
             std::lock_guard<std::mutex> lock_guard(encodedDataMutex);
 
-            LOG(WARN) << "Buffer size: " << encodedDataBuffer.size();
-
             encodedData = std::move(encodedDataBuffer.back());
 
             encodedDataBuffer.pop_back();
@@ -98,7 +96,7 @@ namespace LIRS {
 
     void LiveCamFramedSource::doGetNextFrame() {
 
-        if (transcoder->isReadable() && !encodedDataBuffer.empty()) {
+        if (!encodedDataBuffer.empty()) {
             deliverData();
         } else {
             fFrameSize = 0;

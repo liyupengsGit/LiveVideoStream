@@ -7,6 +7,7 @@
 #include <liveMedia.hh>
 #include "LiveCamFramedSource.hpp"
 #include "CameraUnicastServerMediaSubsession.hpp"
+#include "TestServerMediaSubsession.hpp"
 
 namespace LIRS {
 
@@ -21,6 +22,8 @@ namespace LIRS {
             // create scheduler and environment
             scheduler = BasicTaskScheduler::createNew();
             env = BasicUsageEnvironment::createNew(*scheduler);
+
+            destAddress.s_addr = chooseRandomIPv4SSMAddress(*env);
         }
 
         ~LiveCameraRTSPServer() {
@@ -117,6 +120,8 @@ namespace LIRS {
 
         RTSPServer *server;
 
+        struct in_addr destAddress{};
+
         /**
          * Pointers to video sources (transcoders).
          */
@@ -149,21 +154,21 @@ namespace LIRS {
          */
         void addMediaSession(Transcoder *transcoder, const std::string &streamName, const std::string &streamDesc) {
 
+            static unsigned startPortNum = 18888;
+
             // create framed source based on transcoder
             auto framedSource = LiveCamFramedSource::createNew(*env, transcoder);
 
             allocatedVideoSources.push_back(framedSource);
 
-            // create stream replicator for the framed source
-            auto replicator = StreamReplicator::createNew(*env, framedSource, False);
-
             // create media session with the specified path and description
-            auto sms = ServerMediaSession::createNew(*env, streamName.c_str(), streamDesc.c_str());
+            ServerMediaSession *sms = ServerMediaSession::createNew(*env, streamName.c_str(), streamDesc.c_str());
 
             OutPacketBuffer::maxSize = OUT_PACKET_BUFFER_MAX_SIZE;
 
             // add unicast subsession using replicator
-            sms->addSubsession(CameraUnicastServerMediaSubsession::createNew(*env, replicator));
+            sms->addSubsession(MulticastServerMediaSubsession::createNew(*env, destAddress, Port(startPortNum++),
+                                                                         Port(startPortNum++), 1, 96, framedSource));
 
             server->addServerMediaSession(sms);
 

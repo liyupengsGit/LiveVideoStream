@@ -56,9 +56,13 @@ namespace LIRS {
 
         /**
          * Encoded data buffer.
-         * This data will be sent by the server.
          */
-        std::vector<std::vector<uint8_t>> encodedData;
+        std::vector<std::vector<uint8_t>> encodedDataBuffer;
+
+        /**
+         * Encoded data.
+         */
+        std::vector<uint8_t> encodedData;
 
         /**
          * Function to be called when the video source has a new available encoded data.

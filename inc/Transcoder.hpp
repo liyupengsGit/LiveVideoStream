@@ -129,6 +129,13 @@ namespace LIRS {
          */
         std::string getAlias() const;
 
+        /**
+         * Whether the resource is ready for producing encoded data or not.
+         *
+         * @return
+         */
+        bool isReadable() const;
+
     private:
 
         /**

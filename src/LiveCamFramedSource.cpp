@@ -16,8 +16,8 @@ namespace LIRS {
         eventTriggerId = 0;
 
         // cleanup encoded data buffer
-        encodedData.clear();
-        encodedData.shrink_to_fit();
+        encodedDataBuffer.clear();
+        encodedDataBuffer.shrink_to_fit();
 
         LOG(DEBUG) << "USB camera framed source " << transcoder->getDeviceName() << " has been destructed";
     }
@@ -28,7 +28,7 @@ namespace LIRS {
         // create trigger invoking method which will deliver frame
         eventTriggerId = envir().taskScheduler().createEventTrigger(LiveCamFramedSource::deliverFrame0);
 
-        encodedData.reserve(30); // reserve enough space for handling incoming encoded data
+        encodedDataBuffer.reserve(5); // reserve enough space for handling incoming encoded data
 
         // set transcoder's callback indicating new encoded data availability
         transcoder->setOnEncodedDataCallback(std::bind(&LiveCamFramedSource::onEncodedData, this,
@@ -43,13 +43,15 @@ namespace LIRS {
 
     void LiveCamFramedSource::onEncodedData(std::vector<uint8_t> &&newData) {
 
-        if (!isCurrentlyAwaitingData()) return;
+        if (!isCurrentlyAwaitingData())
+           return;
 
-        encodedDataMutex.lock();
+        { // restrict the scope of the lock
 
-        encodedData.emplace_back(std::move(newData)); // add encoded data to be processed later
+            std::lock_guard<std::mutex> lock_guard(encodedDataMutex);
 
-        encodedDataMutex.unlock();
+            encodedDataBuffer.emplace_back(std::move(newData)); // add encoded data to be processed later
+        }
 
         // publish an event to be handled by the event loop
         envir().taskScheduler().triggerEvent(eventTriggerId, this);
@@ -66,42 +68,42 @@ namespace LIRS {
     void LiveCamFramedSource::deliverData() {
 
         if (!isCurrentlyAwaitingData()) {
-            return; // there's no consumers (clients)
-        }
-
-        if (encodedData.empty()) {
-            LOG(WARN) << "No data to send!";
-            fFrameSize = 0;
-            fNumTruncatedBytes = 0;
-//            FramedSource::afterGetting(this); // should be invoked after successfully getting data
             return;
         }
 
-        encodedDataMutex.lock();
+        {
+            std::lock_guard<std::mutex> lock_guard(encodedDataMutex);
 
-        auto frame = encodedData.back();
+            LOG(WARN) << "Buffer size: " << encodedDataBuffer.size();
 
-        encodedData.pop_back();
+            encodedData = std::move(encodedDataBuffer.back());
 
-        encodedDataMutex.unlock();
+            encodedDataBuffer.pop_back();
+        }
 
-        if (frame.size() > fMaxSize) { // truncate data
+        if (encodedData.size() > fMaxSize) { // truncate data
             fFrameSize = fMaxSize;
-            fNumTruncatedBytes = static_cast<unsigned int>(frame.size() - fMaxSize);
-            LOG(WARN) << "Encoded data size is insufficient: " << frame.size() << ", truncated: " << fNumTruncatedBytes;
+            fNumTruncatedBytes = static_cast<unsigned int>(encodedData.size() - fMaxSize);
+            LOG(WARN) << "Truncated: " << fNumTruncatedBytes << ", size: " << encodedData.size();
         } else {
-            fFrameSize = static_cast<unsigned int>(frame.size());
+            fFrameSize = static_cast<unsigned int>(encodedData.size());
         }
 
         gettimeofday(&fPresentationTime, nullptr); // can be changed to the actual frame's captured time
 
-        memcpy(fTo, frame.data(), fFrameSize); // DO NOT CHANGE ADDRESS, ONLY COPY (see Live555 docs)
+        memcpy(fTo, encodedData.data(), fFrameSize); // DO NOT CHANGE ADDRESS, ONLY COPY (see Live555 docs)
 
         FramedSource::afterGetting(this); // should be invoked after successfully getting data
     }
 
     void LiveCamFramedSource::doGetNextFrame() {
-//        deliverData();
+
+        if (transcoder->isReadable() && !encodedDataBuffer.empty()) {
+            deliverData();
+        } else {
+            fFrameSize = 0;
+            return;
+        }
     }
 }
 

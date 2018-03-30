@@ -18,9 +18,6 @@ namespace LIRS {
                 rtspPort(port), httpTunnelingPort(httpPort), watcher(0),
                 scheduler(nullptr), env(nullptr), server(nullptr) {
 
-            // set custom buffer size
-            OutPacketBuffer::maxSize = OUT_PACKET_BUFFER_MAX_SIZE;
-
             // create scheduler and environment
             scheduler = BasicTaskScheduler::createNew();
             env = BasicUsageEnvironment::createNew(*scheduler);
@@ -162,6 +159,8 @@ namespace LIRS {
 
             // create media session with the specified path and description
             auto sms = ServerMediaSession::createNew(*env, streamName.c_str(), streamDesc.c_str());
+
+            OutPacketBuffer::maxSize = OUT_PACKET_BUFFER_MAX_SIZE;
 
             // add unicast subsession using replicator
             sms->addSubsession(CameraUnicastServerMediaSubsession::createNew(*env, replicator));

@@ -1,4 +1,5 @@
 #include <Logger.hpp>
+#include <LiveCameraRTSPServer.hpp>
 #include "CameraUnicastServerMediaSubsession.hpp"
 
 namespace LIRS {
@@ -17,7 +18,7 @@ namespace LIRS {
 
         LOG(INFO) << "Create new stream source for client: " << clientSessionId;
 
-        estBitrate = 300;
+        estBitrate = 500;
 
         auto source = replicator->createStreamReplica();
 
@@ -27,7 +28,7 @@ namespace LIRS {
 
     RTPSink *
     CameraUnicastServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
-                                                         FramedSource * /*inputSource*/) {
+                                                         FramedSource *inputSource) {
 
         return H265VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic);
     }

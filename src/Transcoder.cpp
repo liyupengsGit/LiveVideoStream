@@ -429,4 +429,8 @@ namespace LIRS {
         decoderContext = {};
         encoderContext = {};
     }
+
+    bool Transcoder::isReadable() const {
+        return isPlayingFlag.load();
+    }
 }

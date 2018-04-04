@@ -19,7 +19,7 @@ namespace LIRS {
         encodedDataBuffer.clear();
         encodedDataBuffer.shrink_to_fit();
 
-        LOG(DEBUG) << "USB camera framed source " << transcoder->getDeviceName() << " has been destructed";
+        LOG(DEBUG) << "Camera framed source " << transcoder->getDeviceName() << " has been destructed";
     }
 
     LiveCamFramedSource::LiveCamFramedSource(UsageEnvironment &env, Transcoder *transcoder) :
@@ -43,15 +43,15 @@ namespace LIRS {
 
     void LiveCamFramedSource::onEncodedData(std::vector<uint8_t> &&newData) {
 
-        if (!isCurrentlyAwaitingData())
-           return;
-
-        { // restrict the scope of the lock
-
-            std::lock_guard<std::mutex> lock_guard(encodedDataMutex);
-
-            encodedDataBuffer.emplace_back(std::move(newData)); // add encoded data to be processed later
+        if (!isCurrentlyAwaitingData()) {
+            return;
         }
+
+        encodedDataMutex.lock();
+
+        encodedDataBuffer.emplace_back(std::move(newData)); // add encoded data to be processed later
+
+        encodedDataMutex.unlock();
 
         // publish an event to be handled by the event loop
         envir().taskScheduler().triggerEvent(eventTriggerId, this);
@@ -71,13 +71,13 @@ namespace LIRS {
             return;
         }
 
-        {
-            std::lock_guard<std::mutex> lock_guard(encodedDataMutex);
+        encodedDataMutex.lock(); // using mutex instead of lock, because nothing could happen here (RAII)
 
-            encodedData = std::move(encodedDataBuffer.back());
+        encodedData = std::move(encodedDataBuffer.back());
 
-            encodedDataBuffer.pop_back();
-        }
+        encodedDataBuffer.pop_back();
+
+        encodedDataMutex.unlock();
 
         if (encodedData.size() > fMaxSize) { // truncate data
             fFrameSize = fMaxSize;

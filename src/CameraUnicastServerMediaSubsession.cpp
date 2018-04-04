@@ -18,7 +18,7 @@ namespace LIRS {
 
         LOG(INFO) << "Create new stream source for client: " << clientSessionId;
 
-        estBitrate = 500;
+        estBitrate = 400;
 
         auto source = replicator->createStreamReplica();
 

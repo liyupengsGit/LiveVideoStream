@@ -301,7 +301,8 @@ namespace LIRS {
         char args[128];
         snprintf(args, sizeof(args), "width=%d:height=%d:pix_fmt=%d:time_base=%d/%d:sar=%d/%d:frame_rate=%d/%d",
                  (int) frameWidth, (int) frameHeight, rawPixFormat, decoderContext.videoStream->time_base.num,
-                 decoderContext.videoStream->time_base.den, 1, 1, frameRate.num, frameRate.den);
+                 decoderContext.videoStream->time_base.den, decoderContext.videoStream->sample_aspect_ratio.num,
+                 decoderContext.videoStream->sample_aspect_ratio.den, frameRate.num, frameRate.den);
 
         // create buffer source with the specified params
         auto status = avfilter_graph_create_filter(&bufferSrcCtx, bufferSrc, "in", args, nullptr, filterGraph);
@@ -326,7 +327,8 @@ namespace LIRS {
 
         if (this->filterQuery.empty()) {
 
-            snprintf(frameStepFilterQuery, sizeof(frameStepFilterQuery), "fps=fps=%d/%d", outputFrameRate.num, outputFrameRate.den);
+            snprintf(frameStepFilterQuery, sizeof(frameStepFilterQuery), "fps=fps=%d/%d",
+                     outputFrameRate.num, outputFrameRate.den);
 
             // add graph represented by the filter query
             status = avfilter_graph_parse(filterGraph, frameStepFilterQuery, inputs, outputs, nullptr);

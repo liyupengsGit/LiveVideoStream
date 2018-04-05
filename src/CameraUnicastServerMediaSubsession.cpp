@@ -1,6 +1,5 @@
 #include <Logger.hpp>
-#include <LiveCameraRTSPServer.hpp>
-#include "CameraUnicastServerMediaSubsession.hpp"
+#include <CameraUnicastServerMediaSubsession.hpp>
 
 namespace LIRS {
 

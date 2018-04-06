@@ -21,7 +21,7 @@ namespace LIRS {
 
         auto source = replicator->createStreamReplica();
 
-        // only discrete frames are being send (w/o start code bytes)
+        // only discrete frames are being sent (w/o start code bytes)
         return H265VideoStreamDiscreteFramer::createNew(envir(), source);
     }
 

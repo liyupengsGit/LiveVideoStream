@@ -27,6 +27,7 @@ namespace LIRS {
 
         RTPSink *createNewRTPSink(Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
                                   FramedSource *inputSource) override;
+
     };
 }
 

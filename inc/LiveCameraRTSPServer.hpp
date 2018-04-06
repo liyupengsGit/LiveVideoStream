@@ -83,7 +83,7 @@ namespace LIRS {
 
             // create media session for each video source (transcoder)
             for (auto &transcoder : transcoders) {
-                addMediaSession(transcoder, transcoder->getAlias(), "description");
+                addMediaSession(transcoder, transcoder->getAlias(), "stream description");
             }
 
             env->taskScheduler().doEventLoop(&watcher); // do not return
@@ -158,7 +158,8 @@ namespace LIRS {
             auto replicator = StreamReplicator::createNew(*env, framedSource, False);
 
             // create media session with the specified path and description
-            auto sms = ServerMediaSession::createNew(*env, streamName.c_str(), streamDesc.c_str());
+            auto sms = ServerMediaSession::createNew(*env, streamName.c_str(), "stream information", streamDesc.c_str(), False,
+                                                     "a=fmtp:96\n");
 
             OutPacketBuffer::maxSize = OUT_PACKET_BUFFER_MAX_SIZE;
 

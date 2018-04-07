@@ -1,4 +1,3 @@
-#include <Logger.hpp>
 #include <CameraUnicastServerMediaSubsession.hpp>
 
 namespace LIRS {

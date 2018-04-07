@@ -5,7 +5,8 @@
 #include <StreamReplicator.hh>
 #include <H265VideoRTPSink.hh>
 #include <H265VideoStreamDiscreteFramer.hh>
-#include <H265VideoStreamFramer.hh>
+
+#include <Logger.hpp>
 
 namespace LIRS {
 

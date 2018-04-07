@@ -271,7 +271,7 @@ namespace LIRS {
          * NALU start code bytes number (first 4 bytes, {0x0, 0x0, 0x0, 0x1}).
          * Used to truncate start codes from the encoded data.
          */
-        const static unsigned int NALU_START_CODE_BYTES_NUMBER = 4U;
+        constexpr static unsigned int NALU_START_CODE_BYTES_NUMBER = 4U;
 
         /* Methods */
 

@@ -55,7 +55,7 @@ namespace LIRS {
                         av_frame_make_writable(convertedFrame);
 
                         // convert raw frame into another pixel format
-                        sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(filterFrame->data),
+                        sws_scale(converterContext, filterFrame->data,
                                   filterFrame->linesize, 0, static_cast<int>(frameHeight),
                                   convertedFrame->data, convertedFrame->linesize);
 

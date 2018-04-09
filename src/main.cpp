@@ -7,7 +7,7 @@ int main(int argc, char **argv) {
 
     av_log_set_level(AV_LOG_VERBOSE);
 
-    auto transcoder = LIRS::Transcoder::newInstance("/dev/video0", "camera", 640, 480, "yuyv422", "yuv420p", 15, 5);
+    auto transcoder = LIRS::Transcoder::newInstance("/dev/video0", "camera", 640, 480, "yuyv422", "yuv420p", 15, 3);
 
     auto server = new LIRS::LiveCameraRTSPServer();
 

@@ -9,6 +9,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules)
 
 find_package(FFmpeg REQUIRED)
 find_package(Live555 REQUIRED)
+find_package(Boost COMPONENTS program_options REQUIRED)
 
 # executables
 include_directories("inc")
@@ -44,3 +45,7 @@ if (Live555_FOUND)
 else(Live555_FOUND)
     message(FATAL_ERROR "Can't find Live555 libraries")
 endif(Live555_FOUND)
+
+# Boost
+include_directories(${Boost_INCLUDE_DIR}/boost)
+target_link_libraries(${PROJECT_NAME} ${Boost_LIBRARIES})

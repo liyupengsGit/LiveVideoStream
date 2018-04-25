@@ -145,7 +145,7 @@ namespace LIRS {
          * Adds new server media session using transcoder as a source to the server.
          *
          * @param transcoder - video source.
-         * @param streamName - the name of the stream (part of the URL), e.g. rtsp://.../<camera/1>.
+         * @param streamName - the name of the stream (part of the URL), e.g. rtsp://.../camera/1.
          * @param streamDesc -description of the stream.
          */
         void addMediaSession(Transcoder *transcoder, const std::string &streamName, const std::string &streamDesc) {

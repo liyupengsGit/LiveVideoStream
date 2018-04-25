@@ -1,5 +1,4 @@
 #include "Config.hpp"
-#include "Logger.hpp"
 #include "LiveCameraRTSPServer.hpp"
 
 int main(int argc, char **argv) {
@@ -8,15 +7,18 @@ int main(int argc, char **argv) {
 
     av_log_set_level(AV_LOG_VERBOSE);
 
-    auto rare = LIRS::Transcoder::newInstance(RIGHT_CAM, "right", 744, 480, "bayer_grbg8", "yuv420p", 15, LIRS::Configuration::DEFAULT_FRAMERATE);
+    LIRS::Configuration configuration;
+    configuration.loadConfig(argc, argv);
 
-    auto server = new LIRS::LiveCameraRTSPServer();
-
-    server->addTranscoder(rare);
-
-    server->run();
-
-    delete server;
+//    auto rare = LIRS::Transcoder::newInstance(RIGHT_CAM, "right", 744, 480, "bayer_grbg8", "yuv420p", 15, LIRS::Configuration::DEFAULT_STREAMING_FRAMERATE);
+//
+//    auto server = new LIRS::LiveCameraRTSPServer();
+//
+//    server->addTranscoder(rare);
+//
+//    server->run();
+//
+//    delete server;
 
     return 0;
 }

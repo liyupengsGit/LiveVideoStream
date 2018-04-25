@@ -7,7 +7,6 @@
 
 #include "Logger.hpp"
 #include "Utils.hpp"
-//#include "Config.hpp"
 
 #ifdef __cplusplus
 extern "C" {

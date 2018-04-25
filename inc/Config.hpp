@@ -2,6 +2,13 @@
 #define LIVE_VIDEO_STREAM_CONFIG_HPP
 
 #include <string>
+#include "Logger.hpp"
+#include <boost/program_options/options_description.hpp>
+#include <boost/program_options/option.hpp>
+#include <boost/program_options/variables_map.hpp>
+#include <boost/program_options/parsers.hpp>
+
+namespace po = boost::program_options;
 
 #define RARE_CAM "/dev/v4l/by-path/pci-0000:00:14.0-usb-0:3:1.0-video-index0"
 #define LEFT_CAM "/dev/v4l/by-path/pci-0000:00:14.0-usb-0:4:1.0-video-index0"
@@ -10,22 +17,11 @@
 
 namespace LIRS {
 
-    struct Configuration {
-
-    private:
-
-        static uint framerate;
-        static uint frame_width;
-        static uint frame_height;
-        static uint udp_packet_size_bytes;
-        static uint estimated_bitrate_kbps;
-        static uint vbv_bufsize_bytes;
-        static short intra_refresh_enabled;
-        static short slices;
+    class Configuration {
 
     public:
 
-        constexpr static unsigned int DEFAULT_FRAMERATE = 5;
+        constexpr static unsigned int DEFAULT_STREAMING_FRAMERATE = 5;
 
         constexpr static unsigned int DEFAULT_FRAME_WIDTH = 744;
 
@@ -52,6 +48,79 @@ namespace LIRS {
             return std::string(formattedStr);
         }
 
+        bool loadConfig(int cliArgc, char **cliArgs) {
+
+            po::options_description cli_options;
+
+            po::options_description generic("Generic options");
+            po::options_description streaming("Streaming configuration");
+            po::options_description codec("Codec configuration");
+
+            generic.add_options()
+                    ("version,v", "print version")
+                    ("help", "produce help message");
+
+            streaming.add_options()
+                    ("source,s", po::value<std::string>(&streaming_source_url)->default_value(RARE_CAM), "set video streaming camera url")
+                    ("topic", po::value<std::string>(&streaming_topic_name)->default_value("rare"), "set streaming topic name")
+                    ("width,w", po::value<size_t>(&origin_frame_width)->default_value(DEFAULT_FRAME_WIDTH), "set original frame width")
+                    ("height,h", po::value<size_t>(&origin_frame_height)->default_value(DEFAULT_FRAME_HEIGHT), "set original frame height")
+                    ("out-width", po::value<size_t>(&streaming_frame_width)->default_value(DEFAULT_FRAME_WIDTH), "set streaming frame width")
+                    ("out-height", po::value<size_t>(&streaming_frame_height)->default_value(DEFAULT_FRAME_HEIGHT), "set streaming frame height")
+                    ("pix-fmt,f", po::value<std::string>(&origin_pixel_format)->default_value("bayer_grbg"), "set original pixel format")
+                    ("codec-pix-fmt", po::value<std::string>(&codec_input_pixel_format)->default_value("yuv420p"), "set codec pixel format")
+                    ("fps-num", po::value<size_t>(&origin_framerate_num)->default_value(DEFAULT_STREAMING_FRAMERATE), "set original framerate numerator")
+                    ("fps-den", po::value<size_t>(&origin_framerate_den)->default_value(1), "set original framerate denumerator")
+                    ("out-fps-num", po::value<size_t>(&streaming_framerate_num)->default_value(DEFAULT_STREAMING_FRAMERATE), "set streaming framerate numerator")
+                    ("out-fps-den", po::value<size_t>(&streaming_framerate_den)->default_value(1), "set streaming framerate denumerator");
+
+            cli_options.add(generic).add(streaming);
+
+            po::variables_map vm;
+
+            po::store(po::parse_command_line(cliArgc, reinterpret_cast<const char *const *>(cliArgs),
+                                             cli_options), vm, true);
+
+            po::notify(vm);
+
+            if (vm.count("help")) {
+                std::cout << cli_options << std::endl;
+                return false;
+            }
+
+            LOG(WARN) << streaming_topic_name << ", " << streaming_source_url;
+
+            return true;
+        }
+
+    private:
+
+        std::string streaming_source_url;
+
+        std::string streaming_topic_name;
+
+        size_t origin_frame_width;
+        size_t streaming_frame_width;
+
+        size_t origin_frame_height;
+        size_t streaming_frame_height;
+
+        std::string origin_pixel_format;
+        std::string codec_input_pixel_format;
+
+        size_t origin_framerate_num;
+        size_t origin_framerate_den;
+
+        size_t streaming_framerate_num;
+        size_t streaming_framerate_den;
+
+        // Codec settings
+
+        size_t number_of_slices;
+        size_t vbv_bufsize_bytes;
+        bool intra_refresh_enabled;
+        size_t udp_packet_size_bytes;
+        size_t estimated_bitrate_kbps;
     };
 }
 

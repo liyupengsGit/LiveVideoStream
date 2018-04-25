@@ -21,6 +21,8 @@ namespace LIRS {
          * @return resulting concatenated string.
          */
         std::string concatParams(std::initializer_list<size_t> args, std::string delimiter = {}, std::string tail = {});
+
+        std::string to_string_with_prefix(size_t val, std::string prefix = {});
     }
 }
 

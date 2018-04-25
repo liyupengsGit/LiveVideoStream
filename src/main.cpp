@@ -1,3 +1,4 @@
+#include "Config.hpp"
 #include "Logger.hpp"
 #include "LiveCameraRTSPServer.hpp"
 
@@ -7,11 +8,11 @@ int main(int argc, char **argv) {
 
     av_log_set_level(AV_LOG_VERBOSE);
 
-    auto transcoder = LIRS::Transcoder::newInstance("/dev/video0", "camera", 640, 480, "yuyv422", "yuv420p", 15, 3);
+    auto rare = LIRS::Transcoder::newInstance(RIGHT_CAM, "right", 744, 480, "bayer_grbg8", "yuv420p", 15, LIRS::Configuration::DEFAULT_FRAMERATE);
 
     auto server = new LIRS::LiveCameraRTSPServer();
 
-    server->addTranscoder(transcoder);
+    server->addTranscoder(rare);
 
     server->run();
 

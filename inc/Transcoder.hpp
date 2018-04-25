@@ -7,6 +7,7 @@
 
 #include "Logger.hpp"
 #include "Utils.hpp"
+//#include "Config.hpp"
 
 #ifdef __cplusplus
 extern "C" {
@@ -264,6 +265,16 @@ namespace LIRS {
          * Callback function called when new encoded video data is available.
          */
         std::function<void(std::vector<uint8_t> &&)> onEncodedDataCallback;
+
+        /**
+         * Output frame width after scaling.
+         */
+        size_t outFrameWidth;
+
+        /**
+         * Output frame height after scaling.
+         */
+        size_t outFrameHeight;
 
         /** constants **/
 

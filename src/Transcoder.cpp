@@ -1,6 +1,5 @@
+#include "Config.hpp"
 #include "Transcoder.hpp"
-
-#include <utility>
 
 namespace LIRS {
 
@@ -55,7 +54,7 @@ namespace LIRS {
                         av_frame_make_writable(convertedFrame);
 
                         // convert raw frame into another pixel format
-                        sws_scale(converterContext, filterFrame->data,
+                        sws_scale(converterContext, reinterpret_cast<const uint8_t *const *>(filterFrame->data),
                                   filterFrame->linesize, 0, static_cast<int>(frameHeight),
                                   convertedFrame->data, convertedFrame->linesize);
 
@@ -97,7 +96,8 @@ namespace LIRS {
               frameRate(AVRational{(int) frameRate, 1}), outputFrameRate(AVRational{(int) outFrameRate, 1}),
               sourceBitRate(0), decoderContext({}), encoderContext({}), rawFrame(nullptr), convertedFrame(nullptr),
               filterFrame(nullptr), decodingPacket(nullptr), encodingPacket(nullptr), converterContext(nullptr),
-              filterGraph(nullptr), bufferSrcCtx(nullptr), bufferSinkCtx(nullptr), isPlayingFlag(false) {
+              filterGraph(nullptr), bufferSrcCtx(nullptr), bufferSinkCtx(nullptr), isPlayingFlag(false),
+              outFrameWidth(0), outFrameHeight(0) {
 
         LOG(INFO) << "Constructing transcoder for \"" << videoSourceUrl << "\"";
 
@@ -108,6 +108,10 @@ namespace LIRS {
         assert(rawPixFormat != AV_PIX_FMT_NONE && encoderPixFormat != AV_PIX_FMT_NONE);
 
         LOG(INFO) << "Decoder/encoder pixel formats: " << rawPixFmtStr << " and " << encPixFmtStr;
+
+        // set out width x height
+        outFrameWidth = Configuration::DEFAULT_FRAME_WIDTH;
+        outFrameHeight = Configuration::DEFAULT_FRAME_HEIGHT;
 
         registerAll();
 
@@ -217,8 +221,8 @@ namespace LIRS {
         assert(encoderContext.codecContext);
 
         // set up parameters
-        encoderContext.codecContext->width = static_cast<int>(frameWidth);
-        encoderContext.codecContext->height = static_cast<int>(frameHeight);
+        encoderContext.codecContext->width = static_cast<int>(outFrameWidth);
+        encoderContext.codecContext->height = static_cast<int>(outFrameHeight);
 
         encoderContext.codecContext->profile = FF_PROFILE_HEVC_MAIN;
 
@@ -238,16 +242,15 @@ namespace LIRS {
         AVDictionary *options = nullptr;
 
         // the faster you get, the less compression is achieved
-        av_dict_set(&options, "preset", "ultrafast", 0);
+        av_dict_set(&options, "preset", "veryfast", 0);
 
         // optimization for fast encoding and low latency streaming
         av_dict_set(&options, "tune", "zerolatency", 0);
 
-        // constant rate factor
-        av_dict_set_int(&options, "crf", 32, 0);
+        av_dict_set(&options, "b", utils::to_string_with_prefix(Configuration::DEFAULT_BITRATE_KBPS, "K").data(), 0);
 
         // set additional codec options
-        av_opt_set(encoderContext.codecContext->priv_data, "x265-params", "slices=1:intra-refresh=0", 0);
+        av_opt_set(encoderContext.codecContext->priv_data, "x265-params", Configuration::get_default_codec_params_str().data(), 0);
 
         // open the output format to use given codec
         statCode = avcodec_open2(encoderContext.codecContext, encoderContext.codec, &options);
@@ -270,17 +273,18 @@ namespace LIRS {
 
         // allocate frame to be used in converter
         convertedFrame = av_frame_alloc();
-        convertedFrame->width = static_cast<int>(frameWidth);
-        convertedFrame->height = static_cast<int>(frameHeight);
+        convertedFrame->width = static_cast<int>(outFrameWidth);
+        convertedFrame->height = static_cast<int>(outFrameHeight);
         convertedFrame->format = encoderPixFormat;
-        int statCode = av_frame_get_buffer(convertedFrame, 0); // ref counted
+        int statCode = av_frame_get_buffer(convertedFrame, 0); // ref counted frame
         assert(statCode == 0);
 
         // create converter from raw pixel format to encoder supported pixel format
         converterContext = sws_getCachedContext(nullptr, static_cast<int>(frameWidth), static_cast<int>(frameHeight),
-                                                rawPixFormat, static_cast<int>(frameWidth),
-                                                static_cast<int>(frameHeight), encoderPixFormat, SWS_FAST_BILINEAR,
-                                                nullptr, nullptr, nullptr);
+                                                rawPixFormat,
+                                                static_cast<int>(outFrameWidth), static_cast<int>(outFrameHeight),
+                                                encoderPixFormat,
+                                                SWS_LANCZOS, nullptr, nullptr, nullptr);
     }
 
     void Transcoder::initFilters() {

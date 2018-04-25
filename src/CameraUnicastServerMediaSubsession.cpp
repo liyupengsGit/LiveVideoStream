@@ -16,7 +16,7 @@ namespace LIRS {
 
         LOG(INFO) << "Create new stream source for client: " << clientSessionId;
 
-        estBitrate = 400;
+        estBitrate = Configuration::DEFAULT_BITRATE_KBPS;
 
         auto source = replicator->createStreamReplica();
 
@@ -28,7 +28,9 @@ namespace LIRS {
     CameraUnicastServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
                                                          FramedSource *inputSource) {
 
-        return H265VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic);
+        auto sink = H265VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic);
+        sink->setPacketSizes(Configuration::DEFAULT_UDP_PACKET_SIZE, Configuration::DEFAULT_UDP_PACKET_SIZE);
+        return sink;
     }
 
 }

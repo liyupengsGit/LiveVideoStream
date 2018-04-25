@@ -14,5 +14,9 @@ namespace LIRS {
             resultStream << tail;
             return resultStream.str();
         }
+
+        std::string to_string_with_prefix(size_t val, std::string prefix) {
+            return std::to_string(val).append(prefix);
+        }
     }
 }
